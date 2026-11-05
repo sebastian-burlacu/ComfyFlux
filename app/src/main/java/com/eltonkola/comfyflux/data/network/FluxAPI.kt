@@ -282,6 +282,7 @@ class FluxAPI(private val logStore: LogStore) {
 
         Log.d("FluxAPI", "Sending prompt: $prompt")
         logStore.debug("client", "POST /prompt body ${prompt.length} chars, ${promptRequest.prompt.size} nodes")
+        logStore.trace("client", "POST /prompt full request: $prompt")
         val response = client.post("$serverAddress/prompt") {
             contentType(ContentType.Application.Json)
             setBody(prompt)

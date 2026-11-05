@@ -249,6 +249,11 @@ class MainViewModel(
         logStore.verbose = verbose
     }
 
+    fun updateLogBodies(enabled: Boolean) {
+        appSettings.setLogBodies(enabled)
+        logStore.bodies = enabled
+    }
+
     fun setGrqApiKey(key: String) {
         appSettings.setGroqApiKey(key)
     }

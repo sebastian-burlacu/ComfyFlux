@@ -150,6 +150,7 @@ private fun LogRow(entry: LogEntry) {
     val color = when (entry.level) {
         LogLevel.ERROR -> MaterialTheme.colorScheme.error
         LogLevel.WARN -> MaterialTheme.colorScheme.tertiary
+        LogLevel.TRACE -> MaterialTheme.colorScheme.outlineVariant
         LogLevel.DEBUG -> MaterialTheme.colorScheme.outline
         LogLevel.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
     }

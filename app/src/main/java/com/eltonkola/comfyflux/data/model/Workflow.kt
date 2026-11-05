@@ -59,8 +59,8 @@ class Workflow : MutableMap<String, Node<JsonElement>> by mutableMapOf() {
 
     /** Prompt text of the positive text encoder; "" when the workflow has none. */
     fun getPrompt(): String {
-        val id = promptNodeIds().firstOrNull() ?: return ""
-        return this[id]?.inputs?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
+        val (id, key) = promptTextTargets().firstOrNull() ?: return ""
+        return this[id]?.inputs?.jsonObject?.get(key)?.jsonPrimitiveOrNull?.contentOrNull ?: ""
     }
 }
 
@@ -78,7 +78,7 @@ data class Meta(
     val title: String
 )
 
-private const val CLIP_TEXT_ENCODE = "CLIPTextEncode"
+private val CLIP_TEXT_ENCODE = "CLIPTextEncode"
 
 // Nodes that consume conditioning; walking their conditioning links leads to
 // the text encoder that holds the positive prompt.
@@ -87,11 +87,25 @@ private val CONDITIONING_CONSUMERS = setOf(
     "KSamplerAdvanced",
     "SamplerCustom",
     "SamplerCustomAdvanced",
-    "CFGGuider"
+    "CFGGuider",
+    "BasicGuider"
 )
 
 // Input names that carry conditioning links.
-private val CONDITIONING_INPUTS = setOf("positive", "positive_input", "conditioning")
+private val CONDITIONING_INPUTS = setOf("positive", "positive_input", "conditioning", "guider")
+
+// Input names where the user's prompt text can live, in preference order.
+internal val TEXT_LITERAL_KEYS = listOf("text", "prompt", "value", "string")
+
+// Link names to never follow when hunting the positive prompt: negative
+// conditioning, and LLM system/instruction slots that must keep their text.
+private val NON_USER_LINKS = setOf(
+    "negative", "negative_input",
+    "system", "system_prompt", "instruction", "template", "message", "messages"
+)
+
+private fun looksLikeSystemSlot(key: String): Boolean =
+    NON_USER_LINKS.contains(key.lowercase()) || key.lowercase().startsWith("system")
 
 // class_type -> name of the input that holds its seed
 private val SEED_INPUTS = mapOf(
@@ -169,9 +183,80 @@ fun Workflow.updateSizeAndBatch(width: Int, height: Int, batchSize: Int) {
         }
 }
 
-fun Workflow.updatePrompt(prompt: String) {
+/**
+ * (nodeId, inputKey) pairs holding the positive prompt text. Prefers the
+ * conditioning chain of samplers/guiders; when the graph has no classic
+ * text encoder (subgraphs, custom encoders), falls back to a link walk
+ * from the consumers. A text input that is a link (e.g. fed by a
+ * PrimitiveStringMultiline widget node) resolves to the literal node the
+ * user would edit in the web UI - patching the encoder link itself would
+ * do nothing, which is the "app ignores my prompt" bug this fixes.
+ */
+fun Workflow.promptTextTargets(): List<Pair<String, String>> {
+    val targets = mutableListOf<Pair<String, String>>()
+
     promptNodeIds().forEach { id ->
-        replaceInputs(id, mapOf("text" to JsonPrimitive(prompt)))
+        val node = this[id] ?: return@forEach
+        val key = TEXT_LITERAL_KEYS.firstOrNull { it in node.inputs.jsonObject } ?: return@forEach
+        resolveLiteralTarget(id, key)?.let { targets += it }
+    }
+
+    if (targets.isEmpty()) targets += broadTextSearch()
+    return targets
+}
+
+/** Where the actual text lives for input [key] of node [id]: literal or behind a link. */
+private fun Workflow.resolveLiteralTarget(id: String, key: String): List<Pair<String, String>> {
+    val node = this[id] ?: return emptyList()
+    val value = node.inputs.jsonObject[key] ?: return emptyList()
+    if (value !is JsonArray) return listOf(id to key)
+
+    val srcId = value.linkedNodeId() ?: return emptyList()
+    val src = this[srcId] ?: return emptyList()
+    val srcKey = TEXT_LITERAL_KEYS.firstOrNull { k ->
+        src.inputs.jsonObject[k]?.jsonPrimitiveOrNull?.isString == true
+    } ?: return emptyList()
+    return listOf(srcId to srcKey)
+}
+
+/**
+ * Last resort: walk every (non-system, non-negative) input link out of the
+ * conditioning consumers and collect string inputs on the way. Catches
+ * graphs like the Qwen-image templates where the prompt sits on custom
+ * nodes (TextEncode.../TextGenerate) behind switch nodes.
+ */
+private fun Workflow.broadTextSearch(): List<Pair<String, String>> {
+    val found = mutableListOf<Pair<String, String>>()
+    val visited = mutableSetOf<String>()
+    val queue = ArrayDeque<String>()
+
+    filterValues { it.classType in CONDITIONING_CONSUMERS }
+        .forEach { (id, _) -> queue.add(id) }
+
+    while (queue.isNotEmpty()) {
+        val id = queue.removeFirst()
+        if (!visited.add(id)) continue
+        val node = this[id] ?: continue
+
+        TEXT_LITERAL_KEYS.firstOrNull { key ->
+            !looksLikeSystemSlot(key) && node.inputs.jsonObject[key]?.jsonPrimitiveOrNull?.isString == true
+        }?.let { key -> found += id to key }
+
+        node.inputs.jsonObject.forEach { (key, value) ->
+            if (!looksLikeSystemSlot(key)) {
+                value.linkedNodeId()?.let { queue.add(it) }
+            }
+        }
+    }
+    return found
+}
+
+private val JsonElement.jsonPrimitiveOrNull: kotlinx.serialization.json.JsonPrimitive?
+    get() = this as? kotlinx.serialization.json.JsonPrimitive
+
+fun Workflow.updatePrompt(prompt: String) {
+    promptTextTargets().forEach { (id, key) ->
+        replaceInputs(id, mapOf(key to JsonPrimitive(prompt)))
     }
 }
 

@@ -32,13 +32,14 @@ data class SettingsState(
     val system: Boolean,
     val dynamicColor: Boolean,
     val grqApiKey: String,
-    val verboseLogging: Boolean
+    val verboseLogging: Boolean,
+    val logBodies: Boolean
 )
 
 class AppSettings(private val sharedPreferences: SharedPreferences) {
 
     private val _settingsState =
-        MutableStateFlow(SettingsState(isDarkTheme(), isSystemTheme(), isDynamicColor(), groqApi(), verboseLogging()))
+        MutableStateFlow(SettingsState(isDarkTheme(), isSystemTheme(), isDynamicColor(), groqApi(), verboseLogging(), logBodies()))
     val settingsState: StateFlow<SettingsState> = _settingsState.asStateFlow()
 
     companion object {
@@ -50,6 +51,7 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         const val RECENT_PROMPTS = "recent_prompts"
         const val GENERATION_DRAFT = "generation_draft"
         const val VERBOSE_LOGGING = "verbose_logging"
+        const val LOG_BODIES = "log_bodies"
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -86,6 +88,16 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
     fun setVerboseLogging(value: Boolean) {
         sharedPreferences.edit().putBoolean(VERBOSE_LOGGING, value).apply()
         _settingsState.update { it.copy(verboseLogging = value) }
+    }
+
+    private fun logBodies(): Boolean {
+        return sharedPreferences.getBoolean(LOG_BODIES, false)
+    }
+
+    /** On (second verbosity level): the log also keeps full request payloads. */
+    fun setLogBodies(value: Boolean) {
+        sharedPreferences.edit().putBoolean(LOG_BODIES, value).apply()
+        _settingsState.update { it.copy(logBodies = value) }
     }
 
     fun setServerUrl(url: String) {

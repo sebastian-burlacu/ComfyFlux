@@ -15,11 +15,20 @@ clears it, so export anything you might need before closing the app.
 
 ## Verbose logging
 
-Settings → **Verbose logging: On** makes the log keep debug-level detail:
-every HTTP call with endpoint, status, payload size and duration, websocket
-connect/events, and full stack traces for failures. Leave it off normally —
-it fills the buffer fast — turn it on the moment something misbehaves,
-reproduce once, then export.
+Two levels, both in Settings:
+
+- **Verbose logging: On** makes the log keep debug-level detail: every HTTP
+  call with endpoint, status, payload size and duration, websocket
+  connect/events, and full stack traces for failures.
+- **Log request bodies: On** (needs the first one too) additionally keeps
+  the *complete* JSON of every generation request - the whole workflow,
+  your prompt, seed, and the model files in use - plus a readable
+  "generate config" summary naming exactly which node your prompt was
+  written into.
+
+Leave them off normally — they fill the buffer fast. Turn verbose on the
+moment something misbehaves, reproduce once, then export; add bodies only
+when the question is "what did the app actually send?".
 
 ## Exporting a log
 

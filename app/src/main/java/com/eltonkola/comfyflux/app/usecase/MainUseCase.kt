@@ -18,6 +18,7 @@ import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
 import com.eltonkola.comfyflux.data.model.applyModelOverrides
 import com.eltonkola.comfyflux.data.model.detectModelSlots
+import com.eltonkola.comfyflux.data.model.promptTextTargets
 import com.eltonkola.comfyflux.data.model.updateCfgAndSteps
 import com.eltonkola.comfyflux.data.model.updatePrompt
 import com.eltonkola.comfyflux.data.model.updateSeed
@@ -280,6 +281,14 @@ class MainUseCase(
         workflow.applyModelOverrides(_uiState.value.modelOverrides)
         workflow.updatePrompt(prompt = uiState.value.prompt.cleanPrompt())
         workflow.updateSeed(seed = seed)
+        logStore.trace(
+            "client",
+            "generate config: workflow=${_uiState.value.workflow.name}, " +
+                "size=${_uiState.value.width}x${_uiState.value.height} batch=${_uiState.value.batchSize}, " +
+                "seed=$seed cfg=${_uiState.value.cfg} steps=${_uiState.value.steps}, " +
+                "prompt-patched-into=${workflow.promptTextTargets()}, " +
+                "models=${_uiState.value.modelOverrides}"
+        )
         return PromptRequest(fluxAPI.clientId, workflow)
     }
 

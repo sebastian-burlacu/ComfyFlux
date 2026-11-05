@@ -61,10 +61,25 @@ class LogStoreTest {
         store.error("client", "boom")
         val text = store.exportText()
         assertTrue(text.startsWith("ComfyFlux log export"))
-        assertTrue(text.contains("(2 entries, verbose=true)"))
+        assertTrue(text.contains("(2 entries, verbose=true, bodies=false)"))
         assertTrue(text.contains("INFO [server] connected"))
         assertTrue(text.contains("ERROR [client] boom"))
         assertTrue(text.lines().size == 3) // header + two entries
+    }
+
+    @Test
+    fun traceEntriesNeedTheBodiesSwitchAndKeepPayloads() {
+        val store = LogStore()
+        val body = "x".repeat(5000)
+        store.trace("client", "POST /prompt full request: $body")
+        assertTrue(store.entries.value.isEmpty())
+
+        store.bodies = true
+        val prefix = "POST /prompt full request: "
+        store.trace("client", "$prefix$body")
+        val entry = store.entries.value.single()
+        assertEquals(LogLevel.TRACE, entry.level)
+        assertEquals(prefix.length + 5000, entry.message.length) // not cut at the normal 2000 cap
     }
 
     @Test

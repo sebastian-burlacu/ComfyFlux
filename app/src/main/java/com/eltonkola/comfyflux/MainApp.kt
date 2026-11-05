@@ -48,6 +48,7 @@ class MainApp : Application(), KoinComponent {
         val appSettings: AppSettings = get()
         val logStore: LogStore = get()
         logStore.verbose = appSettings.settingsState.value.verboseLogging
+        logStore.bodies = appSettings.settingsState.value.logBodies
     }
 }
 

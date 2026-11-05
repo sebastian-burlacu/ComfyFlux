@@ -142,6 +142,22 @@ fun SettingsScreen(
                     viewModel.updateVerboseLogging(it)
                 }
             )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Log request bodies: ${if (uiState.logBodies) "On" else "Off"}",
+                fontSize = 20.sp
+            )
+            Text(
+                text = "Also keeps the full JSON every generation request sends (workflow, prompt, seed, models). Very verbose; only for deep debugging.",
+                fontSize = 12.sp
+            )
+            Switch(
+                checked = uiState.logBodies,
+                onCheckedChange = {
+                    viewModel.updateLogBodies(it)
+                }
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
