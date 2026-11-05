@@ -55,6 +55,12 @@ class Workflow : MutableMap<String, Node<JsonElement>> by mutableMapOf() {
     fun toJson(): String {
         return Json.encodeToString(this)
     }
+
+    /** Prompt text of the positive text encoder; "" when the workflow has none. */
+    fun getPrompt(): String {
+        val id = promptNodeIds().firstOrNull() ?: return ""
+        return this[id]?.inputs?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
+    }
 }
 
 @Serializable
@@ -170,10 +176,4 @@ fun Workflow.updateSeed(seed: Long) {
             replaceInputs(id, mapOf(key to JsonPrimitive(seed)))
         }
     }
-}
-
-/** Prompt text of the positive text encoder; "" when the workflow has none. */
-fun Workflow.getPrompt(): String {
-    val id = promptNodeIds().firstOrNull() ?: return ""
-    return this[id]?.inputs?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
 }
