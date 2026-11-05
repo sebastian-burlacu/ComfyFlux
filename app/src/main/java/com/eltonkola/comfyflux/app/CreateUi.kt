@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -23,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -37,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -367,6 +371,30 @@ fun PromptTab(
                 modifier = Modifier.padding(top = 6.dp)
             )
         }
+
+        if (uiState.recentPrompts.isNotEmpty()) {
+            Text(
+                text = "Recent prompts",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+            )
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(uiState.recentPrompts) { recent ->
+                    FilterChip(
+                        selected = false,
+                        onClick = { viewModel.updatePrompt(recent) },
+                        label = {
+                            Text(
+                                text = if (recent.length > 40) recent.take(40) + "…" else recent,
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -397,6 +425,9 @@ fun MoreTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
 
         SeedSelector(uiState = uiState, viewModel = viewModel)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SamplerSettingsSelector(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.size(200.dp))
     }
 }
@@ -563,6 +594,63 @@ fun SeedSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
                 Text(text = "Seed +1")
             }
         }
+    }
+}
+
+@Composable
+fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
+    // Local text so a half-typed "7." isn't rewritten to "7.0" under the cursor;
+    // empty input means "0", i.e. keep the workflow's own value.
+    var cfgText by remember { mutableStateOf(if (uiState.cfg > 0f) uiState.cfg.toString() else "") }
+    var stepsText by remember { mutableStateOf(if (uiState.steps > 0) uiState.steps.toString() else "") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(6.dp)
+    ) {
+        Text(
+            text = "Sampler settings",
+            style = MaterialTheme.typography.headlineSmall
+        )
+
+        TextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = cfgText,
+            onValueChange = {
+                if (it.all { char -> char.isDigit() || char == '.' }) {
+                    cfgText = it
+                    try {
+                        viewModel.setCfg(it.toFloat())
+                    } catch (e: Exception) {
+                        //empty or half-typed cfg, keep the workflow value
+                        viewModel.setCfg(0f)
+                    }
+                }
+            },
+            label = { Text("CFG scale (0 keeps workflow value)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = stepsText,
+            onValueChange = {
+                if (it.all { char -> char.isDigit() }) {
+                    stepsText = it
+                    try {
+                        viewModel.setSteps(it.toInt())
+                    } catch (e: Exception) {
+                        //empty steps, keep the workflow value
+                        viewModel.setSteps(0)
+                    }
+                }
+            },
+            label = { Text("Steps (0 keeps workflow value)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
     }
 }
 

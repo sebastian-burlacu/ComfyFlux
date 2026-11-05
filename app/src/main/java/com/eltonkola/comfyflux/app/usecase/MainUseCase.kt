@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.AppState
+import com.eltonkola.comfyflux.data.GenerationDraft
 import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.Notifier
 import com.eltonkola.comfyflux.data.model.HistoryItem
@@ -14,9 +15,11 @@ import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
 import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
+import com.eltonkola.comfyflux.data.model.updateCfgAndSteps
 import com.eltonkola.comfyflux.data.model.updatePrompt
 import com.eltonkola.comfyflux.data.model.updateSeed
 import com.eltonkola.comfyflux.data.model.updateSizeAndBatch
+import com.eltonkola.comfyflux.data.model.workflows
 import com.eltonkola.comfyflux.data.network.ComfyJson
 import com.eltonkola.comfyflux.data.network.ComfyServerException
 import com.eltonkola.comfyflux.data.network.FluxAPI
@@ -54,6 +57,7 @@ class MainUseCase(
 
     init {
         fluxAPI.setServerAddress(appSettings.serverUrl())
+        restorePersistedState()
     }
 
     suspend fun updateServerUrl(url: String) {
@@ -62,31 +66,49 @@ class MainUseCase(
 
     fun updatePrompt(prompt: String) {
         _uiState.update { it.copy(prompt = prompt) }
+        saveDraft()
     }
 
     fun updateWorkflow(workflow: WorkflowFile) {
         _uiState.update { it.copy(workflow = workflow) }
+        saveDraft()
     }
 
     fun setImageWidth(width: Int) {
         _uiState.update { it.copy(width = width) }
+        saveDraft()
     }
 
     fun setImageHeight(height: Int) {
         _uiState.update { it.copy(height = height) }
+        saveDraft()
     }
 
     fun setBatchSize(batchSize: Int) {
         _uiState.update { it.copy(batchSize = batchSize) }
+        saveDraft()
     }
 
     fun setSeed(seed: Long, isRandom: Boolean) {
         _uiState.update { it.copy(seed = seed, isRandom = isRandom) }
+        saveDraft()
+    }
+
+    /** 0 keeps the workflow's own CFG scale / step count. */
+    fun setCfg(cfg: Float) {
+        _uiState.update { it.copy(cfg = cfg) }
+        saveDraft()
+    }
+
+    fun setSteps(steps: Int) {
+        _uiState.update { it.copy(steps = steps) }
+        saveDraft()
     }
 
     /** A1111-style reroll: keep everything, bump the seed by one, go deterministic. */
     fun incrementSeed() {
         _uiState.update { it.copy(seed = it.seed + 1, isRandom = false) }
+        saveDraft()
     }
 
     suspend fun enrichPrompt() {
@@ -104,6 +126,7 @@ class MainUseCase(
         try {
             val richPrompt = groqAPI.enrichPrompt(uiState.value.prompt)
             _uiState.update { it.copy(prompt = richPrompt, enrichingPrompt = false) }
+            saveDraft()
         } catch (e: Exception) {
             logStore.error("client", "prompt enrichment failed: ${e.message}")
             _uiState.update {
@@ -114,6 +137,7 @@ class MainUseCase(
 
     fun randomSeed() {
         _uiState.update { it.copy(seed = generateRandom16DigitNumber()) }
+        saveDraft()
     }
 
     suspend fun checkStatus() {
@@ -196,6 +220,10 @@ class MainUseCase(
             height = uiState.value.height,
             batchSize = uiState.value.batchSize
         )
+        workflow.updateCfgAndSteps(
+            cfg = uiState.value.cfg,
+            steps = uiState.value.steps
+        )
         workflow.updatePrompt(prompt = uiState.value.prompt.cleanPrompt())
         workflow.updateSeed(seed = seed)
         return PromptRequest(fluxAPI.clientId, workflow)
@@ -215,6 +243,9 @@ class MainUseCase(
             }
             checkStatus()
             notifyGenerationOutcome()
+            if (fluxAPI.progressUiState.value.error.isEmpty()) {
+                addRecentPrompt(uiState.value.prompt)
+            }
         } catch (e: Exception) {
             reportGenerationFailure(e, "generate (${uiState.value.workflow.name})")
         }
@@ -285,6 +316,52 @@ class MainUseCase(
             .replace("\r", " ")
             .replace("\t", " ")
     }
+
+    private fun addRecentPrompt(prompt: String) {
+        val recent = pushRecent(uiState.value.recentPrompts, prompt)
+        _uiState.update { it.copy(recentPrompts = recent) }
+        appSettings.setRecentPrompts(recent)
+    }
+
+    /** Create-screen selections and recent prompts survive an app restart. */
+    private fun restorePersistedState() {
+        _uiState.update { state ->
+            val draft = appSettings.generationDraft()
+            // Only restore a workflow that still ships as a bundled asset.
+            val workflow = draft?.let { saved -> workflows.firstOrNull { it.name == saved.workflowName } }
+            state.copy(
+                prompt = draft?.prompt ?: state.prompt,
+                seed = draft?.seed ?: state.seed,
+                isRandom = draft?.isRandom ?: state.isRandom,
+                width = draft?.width ?: state.width,
+                height = draft?.height ?: state.height,
+                batchSize = draft?.batchSize ?: state.batchSize,
+                cfg = draft?.cfg ?: state.cfg,
+                steps = draft?.steps ?: state.steps,
+                workflow = workflow ?: state.workflow,
+                recentPrompts = appSettings.recentPrompts()
+            )
+        }
+    }
+
+    private fun saveDraft() {
+        val state = uiState.value
+        appSettings.setGenerationDraft(
+            GenerationDraft(
+                prompt = state.prompt,
+                seed = state.seed,
+                isRandom = state.isRandom,
+                width = state.width,
+                height = state.height,
+                batchSize = state.batchSize,
+                cfg = state.cfg,
+                steps = state.steps,
+                workflowName = state.workflow.name,
+                workflowUri = state.workflow.workflowUri,
+                workflowIsServer = state.workflow.isServer
+            )
+        )
+    }
 }
 
 
@@ -311,4 +388,11 @@ fun Context.getWorkflowAsText(workflow: WorkflowFile): String? {
 fun generateRandom16DigitNumber(): Long {
     val random = Random.nextLong(100000000000000, 999999999999999)
     return random
+}
+
+/** Prompt history for the create screen: trimmed, deduplicated (case-sensitive), newest first, capped at 10. */
+fun pushRecent(existing: List<String>, prompt: String): List<String> {
+    val trimmed = prompt.trim()
+    if (trimmed.isEmpty()) return existing
+    return (listOf(trimmed) + existing.filter { it.trim() != trimmed }).take(10)
 }

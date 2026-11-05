@@ -7,6 +7,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+/** Last create-screen selection, restored after an app restart. */
+@Serializable
+data class GenerationDraft(
+    val prompt: String = "",
+    val seed: Long = 0,
+    val isRandom: Boolean = true,
+    val width: Int = 512,
+    val height: Int = 512,
+    val batchSize: Int = 1,
+    val cfg: Float = 0f,
+    val steps: Int = 0,
+    val workflowName: String = "",
+    val workflowUri: String = "",
+    val workflowIsServer: Boolean = false
+)
 
 data class SettingsState(
     val dark: Boolean,
@@ -27,6 +46,28 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         const val SYSTEM_THEME = "system_theme"
         const val DYNAMIC_COLOR = "dynamic_color"
         const val SERVER_URL = "server_url"
+        const val RECENT_PROMPTS = "recent_prompts"
+        const val GENERATION_DRAFT = "generation_draft"
+    }
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun recentPrompts(): List<String> {
+        val raw = sharedPreferences.getString(RECENT_PROMPTS, null) ?: return emptyList()
+        return runCatching { json.decodeFromString<List<String>>(raw) }.getOrDefault(emptyList())
+    }
+
+    fun setRecentPrompts(prompts: List<String>) {
+        sharedPreferences.edit().putString(RECENT_PROMPTS, json.encodeToString(prompts)).apply()
+    }
+
+    fun generationDraft(): GenerationDraft? {
+        val raw = sharedPreferences.getString(GENERATION_DRAFT, null) ?: return null
+        return runCatching { json.decodeFromString<GenerationDraft>(raw) }.getOrNull()
+    }
+
+    fun setGenerationDraft(draft: GenerationDraft) {
+        sharedPreferences.edit().putString(GENERATION_DRAFT, json.encodeToString(draft)).apply()
     }
 
     fun serverUrl(): String {

@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -118,6 +119,18 @@ fun extractAddressAndPort(url: String): Pair<String, Int> {
     return Pair(address, port)
 }
 
+/**
+ * Why a body failed to decode, phrased for the Logs screen / error banner:
+ * an empty body almost always means the server is mid-restart, a corrupt one
+ * is best shown with its head.
+ */
+fun decodeFailureReason(body: String, endpoint: String, status: Int): String =
+    if (body.isBlank()) {
+        "$endpoint returned an empty response (HTTP $status) - is ComfyUI restarting?"
+    } else {
+        "$endpoint returned invalid JSON after ${body.length} chars (HTTP $status): ${body.take(120)}"
+    }
+
 /** Non-2xx answer from the ComfyUI server, carrying the server's own error body. */
 class ComfyServerException(
     val status: Int,
@@ -188,10 +201,19 @@ class FluxAPI(private val logStore: LogStore) {
         serverAddress = address
     }
 
+    /** Decodes an HTTP body, rethrowing malformed JSON as a message the user can act on. */
+    private inline fun <reified T> decodeBody(body: String, endpoint: String, status: Int): T =
+        try {
+            ComfyJson.decodeFromString(body)
+        } catch (e: SerializationException) {
+            throw Exception(decodeFailureReason(body, endpoint, status), e)
+        }
+
     suspend fun fetchObjectInfo(): JsonObject {
         objectInfoCache?.let { return it }
         val response = client.get("$serverAddress/object_info")
-        val info = ComfyJson.parseToJsonElement(response.bodyAsText()).jsonObject
+        val body = response.bodyAsText()
+        val info = decodeBody<JsonElement>(body, "/object_info", response.status.value).jsonObject
         objectInfoCache = info
         return info
     }
@@ -201,7 +223,7 @@ class FluxAPI(private val logStore: LogStore) {
         val response = client.get("$serverAddress/userdata") {
             parameter("dir", "workflows")
         }
-        val el = ComfyJson.parseToJsonElement(response.bodyAsText())
+        val el = decodeBody<JsonElement>(response.bodyAsText(), "/userdata", response.status.value)
         val names = when (el) {
             is JsonArray -> el.mapNotNull { it as? JsonPrimitive }
                 .filter { it.isString }.map { it.content }
@@ -231,7 +253,7 @@ class FluxAPI(private val logStore: LogStore) {
         }
         val responseBody = response.bodyAsText()
         Log.d("FluxAPI", "Received response: $responseBody")
-        val jsonResponse = ComfyJson.decodeFromString<QueuePromptResponse>(responseBody)
+        val jsonResponse = decodeBody<QueuePromptResponse>(responseBody, "/prompt", response.status.value)
         return jsonResponse.prompt_id
     }
 
@@ -426,7 +448,7 @@ class FluxAPI(private val logStore: LogStore) {
         }
         val responseBody = response.bodyAsText()
         Log.d("FluxAPI", "Received response: $responseBody")
-        return ComfyJson.decodeFromString<SystemStats>(responseBody)
+        return decodeBody<SystemStats>(responseBody, "/system_stats", response.status.value)
     }
 
     suspend fun fetchHistory(): List<HistoryItem> {
@@ -435,7 +457,7 @@ class FluxAPI(private val logStore: LogStore) {
             val responseBody = response.bodyAsText()
 
             Log.d("FluxAPI", "Received fetchHistory responseBody: $responseBody")
-            val history = ComfyJson.decodeFromString<Map<String, HistoryResponse>>(responseBody)
+            val history = decodeBody<Map<String, HistoryResponse>>(responseBody, "/history", response.status.value)
             Log.d("FluxAPI", "call fetchHistory history: $history")
 
             history.values.map { it.normalize() }
@@ -448,7 +470,7 @@ class FluxAPI(private val logStore: LogStore) {
             val responseBody = response.bodyAsText()
 
             Log.d("FluxAPI", "Received fetchQueue responseBody: $responseBody")
-            val queue = ComfyJson.decodeFromString<QueueResponse>(responseBody)
+            val queue = decodeBody<QueueResponse>(responseBody, "/queue", response.status.value)
             Log.d("FluxAPI", "call fetchQueue queue: $queue")
 
             queue.normalize()

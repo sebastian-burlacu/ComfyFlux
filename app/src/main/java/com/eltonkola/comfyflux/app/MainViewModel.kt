@@ -111,6 +111,14 @@ class MainViewModel(
         mainUseCase.incrementSeed()
     }
 
+    fun setCfg(cfg: Float) {
+        mainUseCase.setCfg(cfg)
+    }
+
+    fun setSteps(steps: Int) {
+        mainUseCase.setSteps(steps)
+    }
+
     fun interruptImages() {
         viewModelScope.launch {
             fluxAPI.interrupt()

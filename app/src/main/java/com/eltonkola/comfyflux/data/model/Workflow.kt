@@ -182,3 +182,28 @@ fun Workflow.updateSeed(seed: Long) {
         }
     }
 }
+
+// class_type -> the sampler inputs the app is allowed to override. KSamplerAdvanced
+// names its step count "steps" as well; CFGGuider only exposes cfg.
+private val CFG_STEPS_INPUTS = mapOf(
+    "KSampler" to mapOf("cfg" to "cfg", "steps" to "steps"),
+    "KSamplerAdvanced" to mapOf("cfg" to "cfg", "steps" to "steps"),
+    "CFGGuider" to mapOf("cfg" to "cfg")
+)
+
+/**
+ * Override the sampler settings with the values picked in the More tab.
+ * cfg <= 0 / steps <= 0 mean "keep whatever the workflow itself specifies",
+ * so each is skipped independently; CFGGuider only ever receives the cfg.
+ */
+fun Workflow.updateCfgAndSteps(cfg: Float, steps: Int) {
+    if (cfg <= 0f && steps <= 0) return
+    entries.toList().forEach { (id, node) ->
+        val names = CFG_STEPS_INPUTS[node.classType] ?: return@forEach
+        val replacements = buildMap {
+            if (cfg > 0f) names["cfg"]?.let { put(it, JsonPrimitive(cfg)) }
+            if (steps > 0) names["steps"]?.let { put(it, JsonPrimitive(steps)) }
+        }
+        if (replacements.isNotEmpty()) replaceInputs(id, replacements)
+    }
+}

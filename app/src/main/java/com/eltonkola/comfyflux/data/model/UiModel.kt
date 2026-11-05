@@ -75,7 +75,11 @@ data class ImageGenerationUiState(
     val height: Int = 512,
     val batchSize: Int = 1,
     val seed: Long = generateRandom16DigitNumber(),
-    val isRandom: Boolean = true
+    val isRandom: Boolean = true,
+    // 0 keeps whatever the workflow itself specifies.
+    val cfg: Float = 0f,
+    val steps: Int = 0,
+    val recentPrompts: List<String> = emptyList()
 )
 
 data class ImageViewerUiState(

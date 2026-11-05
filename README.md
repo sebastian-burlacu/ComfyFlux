@@ -36,14 +36,19 @@ builds).
 
 - Connects to any ComfyUI server on the local network (`--listen`), with clear
   diagnostics when it cannot
-- Runs workflows from the phone: size, batch, prompt and seed are patched into
-  the workflow before queueing
+- Runs workflows from the phone: size, batch, prompt, seed, CFG scale and
+  step count are patched into the workflow before queueing (0 keeps the
+  workflow's own value)
 - Saved server workflows from the ComfyUI web UI, fetched and run directly
 - Queue screen with per-job cancel and a one-tap "Clear queue" that
   drops all pending jobs while leaving the running one alone
 - History view with the generated images, saved locally in the app;
   any past generation can be re-run with its exact original settings
 - Prompt database with local search to reuse prompts quickly
+- Recent prompt chips under the prompt box: prompts from successful
+  generations are kept (newest first) and one tap puts the full prompt back
+- Your last create-screen draft survives app restarts: prompt, size, batch,
+  seed and the selected bundled workflow are restored on launch
 - In-app logs (Settings -> Logs): server-reported failures like failed
   executions and rejected prompts, plus client-side connection, timeout
   and conversion errors; filterable to errors, clearable
