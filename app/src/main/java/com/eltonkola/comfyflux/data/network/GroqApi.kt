@@ -100,6 +100,10 @@ class GroqAPI(private val appSettings: AppSettings) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** False when neither the user nor the build supplies a key; callers must surface that. */
+    fun hasUsableKey(): Boolean =
+        appSettings.settingsState.value.grqApiKey.ifEmpty { SHARED_API_KEY }.isNotEmpty()
+
     suspend fun enrichPrompt(initialPrompt: String): String {
 
         val apiKey = appSettings.settingsState.value.grqApiKey.ifEmpty { SHARED_API_KEY }
@@ -119,7 +123,7 @@ class GroqAPI(private val appSettings: AppSettings) {
                     "Please enrich this image generation prompt: '$initialPrompt', return the prompt only, without anything else"
                 )
             ),
-            model = "mixtral-8x7b-32768",
+            model = "openai/gpt-oss-20b",
             temperature = 0.7,
             max_tokens = 300,
             top_p = 1,

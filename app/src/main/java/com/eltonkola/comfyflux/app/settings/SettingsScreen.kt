@@ -125,12 +125,12 @@ fun SettingsScreen(
 
 
             Text(
-                text = "GROQ Api Key",
+                text = "Prompt enrichment (Groq) API key",
                 fontSize = 20.sp
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "If you use a wrong api key, calls will silently fail.",
+                text = "Optional. The magic wand in the prompt field expands short prompts using Groq's free AI API. Get a key at console.groq.com and paste it here.",
                 fontSize = 16.sp
             )
             Spacer(modifier = Modifier.height(16.dp))
@@ -140,7 +140,7 @@ fun SettingsScreen(
                     Text(text = "GROQ API KEY")
                 },
                 supportingText = {
-                    Text(text = "Leave empty for the default one")
+                    Text(text = "Leave empty to keep prompt enrichment off.")
                 },
                 value = uiState.grqApiKey,
                 onValueChange = {

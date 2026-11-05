@@ -77,11 +77,24 @@ class MainUseCase(
     }
 
     suspend fun enrichPrompt() {
+        if (uiState.value.prompt.isBlank()) {
+            _uiState.update { it.copy(promptEnrichError = "Write a short prompt first, then tap the magic wand to expand it.") }
+            return
+        }
+        if (!groqAPI.hasUsableKey()) {
+            _uiState.update {
+                it.copy(promptEnrichError = "Prompt enrichment uses the Groq AI service. Add a free API key from console.groq.com in Settings to enable it.")
+            }
+            return
+        }
+        _uiState.update { it.copy(promptEnrichError = null, enrichingPrompt = true) }
         try {
             val richPrompt = groqAPI.enrichPrompt(uiState.value.prompt)
-            _uiState.update { it.copy(prompt = richPrompt) }
+            _uiState.update { it.copy(prompt = richPrompt, enrichingPrompt = false) }
         } catch (e: Exception) {
-            e.printStackTrace()
+            _uiState.update {
+                it.copy(enrichingPrompt = false, promptEnrichError = "Prompt enrichment failed: ${e.message ?: "unknown error"}")
+            }
         }
     }
 

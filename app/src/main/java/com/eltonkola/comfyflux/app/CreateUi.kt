@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.eltonkola.comfyflux.R
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
@@ -297,7 +298,7 @@ fun PromptTab(
                     ) {
                         Icon(
                             imageVector = Ikona.Magic,
-                            contentDescription = "Ai generate prompt",
+                            contentDescription = "Enrich prompt with AI",
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -339,6 +340,25 @@ fun PromptTab(
                 }
             }
         )
+
+        if (uiState.enrichingPrompt) {
+            Row(
+                modifier = Modifier.padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Text(text = "Enriching prompt with AI...", fontSize = 12.sp)
+            }
+        }
+        uiState.promptEnrichError?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
     }
 }
 

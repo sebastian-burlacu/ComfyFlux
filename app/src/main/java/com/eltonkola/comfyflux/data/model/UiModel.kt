@@ -69,6 +69,8 @@ data class ImageGenerationUiState(
     val serverWorkflows: List<WorkflowFile> = emptyList(),
 
     val prompt: String = "",
+    val enrichingPrompt: Boolean = false,
+    val promptEnrichError: String? = null,
     val width: Int = 512,
     val height: Int = 512,
     val batchSize: Int = 1,
