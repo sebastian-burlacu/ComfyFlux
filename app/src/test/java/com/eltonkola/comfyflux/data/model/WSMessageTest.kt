@@ -19,6 +19,16 @@ class WSMessageTest {
     }
 
     @Test
+    fun promptMessageSurvivesNestedNodeErrors() {
+        val nested = """
+        {"prompt_id": "9b2", "number": 3, "node_errors": {"471": {"errors": [{"type": "bad_input", "message": "nope"}], "valid": false}}}
+        """
+        val message = WSMessage.fromJson(nested) as WSMessage.PromptMessage
+        assertEquals("9b2", message.promptId)
+        assertEquals(setOf("471"), message.nodeErrors.keys)
+    }
+
+    @Test
     fun testStatusMessageParsing() {
         val status = """
         {"type": "status", "data": {"status": {"exec_info": {"queue_remaining": 1}}, "sid": "74fce948-fd4d-4104-93eb-388c54fd01e0"}}

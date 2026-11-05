@@ -51,16 +51,31 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
     private fun isWidgetType(t: JsonElement): Boolean =
         t is JsonArray || (t is JsonPrimitive && t.isString && t.content in widgetTypes)
 
-    private fun widgetSlots(cls: String): List<String> {
+    /** Combo-like custom types (COMFY_DYNAMICCOMBO_V3 etc.) are widgets too. */
+    private fun isWidget(s: Spec): Boolean =
+        !s.opts.containsKey("forceInput") &&
+            (isWidgetType(s.type) || s.opts["options"] is JsonArray)
+
+    /**
+     * Widget names in widgets_values order for one UI node: every widgetish
+     * spec input (required then optional), each immediately followed by the
+     * dotted sub-widget slots the frontend exposes for combo-like inputs
+     * (sampling_mode.temperature, format.bit_depth, ...). Subslots belong to
+     * widgets_values only under a widgetish parent; plain sockets (autogrow
+     * image slots) do not consume values.
+     */
+    private fun widgetSlots(cls: String, n: JsonObject): List<String> {
         val slots = ArrayList<String>()
+        val uiNames = (n["inputs"] as? JsonArray)
+            ?.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+            ?: emptyList()
         specs(cls)?.forEach { s ->
-            if (!s.required && !s.opts.containsKey("default")) return@forEach
-            if (isWidgetType(s.type)) {
-                slots += s.name
-                if (s.opts["control_after_generate"]?.jsonPrimitive?.booleanOrNull == true) {
-                    slots += s.name + ":cag"
-                }
+            if (!isWidget(s)) return@forEach
+            slots += s.name
+            if (s.opts["control_after_generate"]?.jsonPrimitive?.booleanOrNull == true) {
+                slots += s.name + ":cag"
             }
+            uiNames.filter { it.startsWith("${s.name}.") }.forEach { slots += it }
         }
         return slots
     }
@@ -162,7 +177,7 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
 
         val specMap = sp.associateBy { it.name }
         val wv = n["widgets_values"] as? JsonArray ?: JsonArray(emptyList())
-        widgetSlots(cls).forEachIndexed { k, name ->
+        widgetSlots(cls, n).forEachIndexed { k, name ->
             if (name.endsWith(":cag")) {
                 val real = name.removeSuffix(":cag")
                 if (k < wv.size && specMap[real]?.opts?.containsKey("control_after_generate") == true) {

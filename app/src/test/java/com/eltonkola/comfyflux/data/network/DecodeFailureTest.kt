@@ -42,6 +42,6 @@ class DecodeFailureTest {
     fun longGarbageBodyIsExcerptedNotDumped() {
         val msg = decodeFailureReason("y".repeat(5000), "/object_info", 200)
         assertTrue(msg, msg.contains("after 5000 chars"))
-        assertFalse(msg, msg.contains("y".repeat(121)))
+        assertFalse(msg, msg.contains("y".repeat(301)))
     }
 }

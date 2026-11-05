@@ -5,6 +5,7 @@ import com.eltonkola.comfyflux.data.model.Workflow
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -38,6 +39,18 @@ class ComfyResponseDecodeTest {
             """{"prompt_id":"d5c6","number":0,"node_errors":{},"extra_field":42}"""
         )
         assertEquals("d5c6", r.prompt_id)
+    }
+
+    @Test
+    fun rejectedPromptDecodesAndExplainsNestedNodeErrors() {
+        // Real rejection body shape: no prompt_id, nested per-node errors.
+        val body = """{"error":{"type":"invalid_prompt","message":"Prompt outputs failed validation","details":""},
+            "node_errors":{"471":{"errors":[{"type":"bad_input","message":"sampling_mode is not a valid choice","details":"pick one of [on, off]"}],"valid":false}}}"""
+        val r = ComfyJson.decodeFromString<QueuePromptResponse>(body)
+        assertEquals(null, r.prompt_id)
+        val text = serverPromptErrorText(body)
+        assertTrue(text.contains("Prompt outputs failed validation"))
+        assertTrue(text.contains("node 471: sampling_mode is not a valid choice (pick one of [on, off])"))
     }
 
     private val modernHistory = """

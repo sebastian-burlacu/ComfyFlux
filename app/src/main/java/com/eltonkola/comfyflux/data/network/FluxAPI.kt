@@ -87,10 +87,39 @@ data class Status(
 
 @Serializable
 data class QueuePromptResponse(
-    val prompt_id: String,
-    val number: Int,
-    val node_errors: Map<String, String>
+    val prompt_id: String? = null,
+    val number: Int? = null,
+    // ComfyUI nests real errors here ({node: {errors: [...], valid: false}})
+    // and adds a top-level "error" object on rejection; keep both unparsed.
+    val node_errors: JsonElement? = null,
+    val error: JsonElement? = null,
 )
+
+/**
+ * Human-readable reason from a /prompt rejection body: the top-level message
+ * plus per-node validation errors ComfyUI nests under node_errors.
+ */
+fun serverPromptErrorText(body: String): String {
+    val root = runCatching {
+        kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+    }.getOrNull() ?: return body.take(400)
+    val parts = ArrayList<String>()
+    (root["error"] as? JsonObject)?.let { err ->
+        val msg = err["message"]?.jsonPrimitive?.contentOrNull
+        val details = err["details"]?.jsonPrimitive?.contentOrNull
+        if (!msg.isNullOrEmpty()) parts += msg + if (!details.isNullOrEmpty()) " ($details)" else ""
+    }
+    (root["node_errors"] as? JsonObject)?.forEach { (node, value) ->
+        val errors = (value as? JsonObject)?.get("errors") as? JsonArray ?: return@forEach
+        errors.forEach { e ->
+            val obj = e as? JsonObject ?: return@forEach
+            val msg = obj["message"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val details = obj["details"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            parts += "node $node: $msg${if (details.isNotEmpty()) " ($details)" else ""}"
+        }
+    }
+    return parts.joinToString("; ").ifEmpty { body.take(400) }
+}
 
 const val DEFAULT_URL = "http://192.168.1.5:8188"
 
@@ -129,7 +158,7 @@ fun decodeFailureReason(body: String, endpoint: String, status: Int): String =
     if (body.isBlank()) {
         "$endpoint returned an empty response (HTTP $status) - is ComfyUI restarting?"
     } else {
-        "$endpoint returned invalid JSON after ${body.length} chars (HTTP $status): ${body.take(120)}"
+        "$endpoint returned invalid JSON after ${body.length} chars (HTTP $status): ${body.take(300)}"
     }
 
 /**
@@ -290,8 +319,12 @@ class FluxAPI(private val logStore: LogStore) {
         val responseBody = response.bodyAsText()
         Log.d("FluxAPI", "Received response: $responseBody")
         val jsonResponse = decodeBody<QueuePromptResponse>(responseBody, "/prompt", response.status.value)
-        logStore.debug("client", "queued as ${jsonResponse.prompt_id}")
-        jsonResponse.prompt_id
+        val promptId = jsonResponse.prompt_id
+        if (promptId.isNullOrEmpty()) {
+            throw Exception("prompt rejected: ${serverPromptErrorText(responseBody)}")
+        }
+        logStore.debug("client", "queued as $promptId")
+        promptId
     }
 
     private val _progressUiState = MutableStateFlow(ProgressGenerationUIState())

@@ -14,7 +14,9 @@ sealed class WSMessage {
         @SerialName("prompt_id")
         override val promptId: String,
         val number: Int,
-        val nodeErrors: Map<String, String> = emptyMap()
+        // Real servers nest {node: {errors: [...], valid: false}}; keep raw.
+        @SerialName("node_errors")
+        val nodeErrors: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap()
     ) : WSMessage()
 
 

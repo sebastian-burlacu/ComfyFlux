@@ -32,6 +32,83 @@ class WorkflowConverterTest {
     private fun inputs(w: Workflow, id: String) = w.getValue(id).inputs.jsonObject
 
     @Test
+    fun dynamicComboMainAndSubWidgetsKeepValueAlignment() {
+        // Combo-like custom types (COMFY_DYNAMICCOMBO_V3) are widgets and the
+        // frontend exposes each sub-widget as a dotted input slot; widgets_values
+        // carries main + sub values positionally. Dropping the main key broke
+        // server validation ("Prompt outputs failed validation") and shifted
+        // every later value.
+        val info = json.parseToJsonElement(
+            """{
+              "SeedNode": {"input": {"required": {"value": ["INT", {}]}}},
+              "SaveImg": {"input": {"required": {
+                "images": ["IMAGE", {}],
+                "prefix": ["STRING", {}],
+                "format": ["COMFY_DYNAMICCOMBO_V3", {"options": ["png", "webp"]}]
+              }}}
+            }"""
+        ).jsonObject
+        val graph = json.parseToJsonElement(
+            """{
+              "nodes": [
+                {"id": 1, "type": "SeedNode", "widgets_values": [42]},
+                {"id": 2, "type": "SaveImg",
+                 "inputs": [
+                   {"name": "images", "link": 9},
+                   {"name": "format.bit_depth", "link": null},
+                   {"name": "format.input_color_space", "link": null}
+                 ],
+                 "widgets_values": ["out", "png", "8-bit", "sRGB"]}
+              ],
+              "links": [[9, 1, 0, 2, 0]]
+            }"""
+        ).jsonObject
+
+        val w = WorkflowConverter(info).convert(graph)
+        val sav = inputs(w, "2")
+        assertEquals(listOf("1", 0), sav["images"]!!.jsonArray.mapIndexed { i, e -> if (i == 0) e.jsonPrimitive.content else e.jsonPrimitive.int })
+        assertEquals("out", sav["prefix"]!!.jsonPrimitive.content)
+        assertEquals("png", sav["format"]!!.jsonPrimitive.content)
+        assertEquals("8-bit", sav["format.bit_depth"]!!.jsonPrimitive.content)
+        assertEquals("sRGB", sav["format.input_color_space"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun linkedSubWidgetSlotEmitsLinkAndStillConsumesItsValue() {
+        val info = json.parseToJsonElement(
+            """{
+              "SeedNode": {"input": {"required": {"value": ["INT", {}]}}},
+              "Gen": {"input": {"required": {
+                "mode": ["COMFY_DYNAMICCOMBO_V3", {"options": ["on", "off"]}],
+                "tail": ["STRING", {}]
+              }}}
+            }"""
+        ).jsonObject
+        val graph = json.parseToJsonElement(
+            """{
+              "nodes": [
+                {"id": 1, "type": "SeedNode", "widgets_values": [42]},
+                {"id": 2, "type": "Gen",
+                 "inputs": [
+                   {"name": "mode.sub", "link": 9},
+                   {"name": "mode.sub2", "link": null}
+                 ],
+                 "widgets_values": ["on", 7, "extra-string", "tail-value"]}
+              ],
+              "links": [[9, 1, 0, 2, 0]]
+            }"""
+        ).jsonObject
+
+        val w = WorkflowConverter(info).convert(graph)
+        val gen = inputs(w, "2")
+        assertEquals("on", gen["mode"]!!.jsonPrimitive.content)
+        assertEquals(listOf("1", 0), gen["mode.sub"]!!.jsonArray.mapIndexed { i, e -> if (i == 0) e.jsonPrimitive.content else e.jsonPrimitive.int })
+        assertEquals("extra-string", gen["mode.sub2"]!!.jsonPrimitive.content)
+        // tail stays aligned after the sub-widget consumed its value slot
+        assertEquals("tail-value", gen["tail"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun plainGraphConvertsToApiFormat() {
         val w = WorkflowConverter(objectInfo).convert(graph("krea-2-turbo-v2.json"))
         assertEquals(
