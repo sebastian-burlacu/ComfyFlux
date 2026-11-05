@@ -11,6 +11,7 @@ import com.eltonkola.comfyflux.data.model.WSMessage
 import com.eltonkola.comfyflux.data.model.Workflow
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
@@ -22,14 +23,16 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.util.InternalAPI
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -97,15 +100,28 @@ https://github.com/comfyanonymous/ComfyUI/issues/2258
 
 class FluxAPI {
 
+    companion object {
+        // Hard stop for a single generation; covers slow model loads.
+        private const val GENERATION_TIMEOUT_MS = 15 * 60 * 1000L
+    }
+
     val clientId = UUID.randomUUID().toString()
 
     private val client = HttpClient(CIO) {
-        install(WebSockets)
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
             })
         }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            requestTimeoutMillis = 60_000
+        }
+    }
+
+    // WebSocket sessions are long lived; they must not inherit request timeouts.
+    private val wsClient = HttpClient(CIO) {
+        install(WebSockets)
     }
 
     private var serverAddress = DEFAULT_URL
@@ -203,58 +219,88 @@ class FluxAPI {
     suspend fun generateImage(prompt: PromptRequest) {
         val promptId = queuePrompt(prompt)
         Log.d("FluxAPI", "Requested prompt: $promptId")
-        // Create a MutableStateFlow to keep track of when the queue is empty
-        val queueStatusFlow = MutableStateFlow(false)
         _progressUiState.value = ProgressGenerationUIState(
             executing = true,
+            promptId = promptId,
             allNodes = prompt.prompt.keys.toList(),
             remainingNodes = prompt.prompt.keys.toList(),
         )
-        // Start WebSocket connection
+
         val (address, port) = extractAddressAndPort(serverAddress)
-        client.webSocket(
-            method = HttpMethod.Get,
-            host = address,
-            port = port,
-            path = "/ws?clientId=$clientId"
-        ) {
-            while (true) {
-                val frame = incoming.receive()
-                if (frame is Frame.Text) {
-                    val messageText = frame.readText()
-                    Log.d("FluxAPI", "Received websocket raw: $messageText")
+        try {
+            withTimeout(GENERATION_TIMEOUT_MS) {
+                wsClient.webSocket(
+                    method = HttpMethod.Get,
+                    host = address,
+                    port = port,
+                    path = "/ws?clientId=$clientId"
+                ) {
+                    for (frame in incoming) {
+                        if (frame !is Frame.Text) continue
+                        val messageText = frame.readText()
+                        Log.d("FluxAPI", "Received websocket raw: $messageText")
 
-                    val wsMessage = WSMessage.fromJson(messageText)
-                    Log.d("FluxAPI", "Received ws message: $wsMessage")
-
-                    val uiState = when (wsMessage) {
-                        is WSMessage.PromptMessage -> handlePromptMessage(wsMessage)
-                        is WSMessage.StatusMessage -> handleStatusMessage(wsMessage)
-                        is WSMessage.ExecutionCachedMessage -> handleExecutionCachedMessage(
-                            wsMessage
-                        )
-
-                        is WSMessage.ExecutingMessage -> handleExecutingMessage(wsMessage)
-                        is WSMessage.ProgressMessage -> handleProgressMessage(wsMessage)
-                        is WSMessage.ExecutedMessage -> handleExecutedMessage(wsMessage)
-                        is WSMessage.ExecutionSuccessMessage -> handleExecutionSuccessMessage(
-                            wsMessage
-                        )
-                    }
-
-                    _progressUiState.value = uiState
-
-                    if (uiState.queueRemaining == 0) {
-                        queueStatusFlow.value = true
+                        val wsMessage = WSMessage.fromJson(messageText)
                         Log.d("FluxAPI", "Received ws message: $wsMessage")
 
-                        break
-                    }
+                        // Ignore events belonging to prompts owned by other clients.
+                        if (wsMessage.promptId != null && wsMessage.promptId != promptId) continue
 
+                        if (handleWsMessage(wsMessage)) break
+                    }
                 }
             }
+        } catch (e: Exception) {
+            _progressUiState.update {
+                it.copy(
+                    executing = false,
+                    error = when (e) {
+                        is TimeoutCancellationException ->
+                            "Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes"
+                        else -> e.message ?: "Connection to the server was lost"
+                    }
+                )
+            }
+            throw e
         }
+    }
 
+    // Applies one websocket event to the progress state; returns true when the
+    // event terminates the execution of our prompt.
+    private fun handleWsMessage(message: WSMessage): Boolean {
+        when (message) {
+            is WSMessage.PromptMessage -> _progressUiState.value = handlePromptMessage(message)
+            is WSMessage.StatusMessage -> _progressUiState.value = handleStatusMessage(message)
+            is WSMessage.ExecutionStartMessage -> _progressUiState.update {
+                it.copy(statusMessage = "Execution started")
+            }
+            is WSMessage.ExecutionCachedMessage -> _progressUiState.value =
+                handleExecutionCachedMessage(message)
+            is WSMessage.ExecutingMessage -> _progressUiState.value = handleExecutingMessage(message)
+            is WSMessage.ProgressMessage -> _progressUiState.value = handleProgressMessage(message)
+            is WSMessage.ExecutedMessage -> _progressUiState.value = handleExecutedMessage(message)
+            is WSMessage.ExecutionSuccessMessage -> _progressUiState.value =
+                handleExecutionSuccessMessage(message)
+            is WSMessage.ExecutionErrorMessage -> _progressUiState.update {
+                it.copy(
+                    executing = false,
+                    statusMessage = "Execution failed",
+                    error = buildString {
+                        append(message.exceptionType ?: "ExecutionError")
+                        append(": ")
+                        append(message.exceptionMessage ?: "unknown error")
+                        message.nodeType?.let { type -> append(" (node: $type)") }
+                    }
+                )
+            }
+            is WSMessage.ExecutionInterruptedMessage -> _progressUiState.update {
+                it.copy(executing = false, statusMessage = "Execution interrupted")
+            }
+            is WSMessage.Unknown -> Log.w("FluxAPI", "Ignoring unknown ws message: ${message.type}")
+        }
+        return message is WSMessage.ExecutionSuccessMessage ||
+                message is WSMessage.ExecutionErrorMessage ||
+                message is WSMessage.ExecutionInterruptedMessage
     }
 
     suspend fun checkSystemStats(): SystemStats? {
@@ -325,7 +371,6 @@ class FluxAPI {
         )
     }
 
-    @OptIn(InternalAPI::class)
     suspend fun deleteHistory(id: String) {
         val deleteBody = buildJsonObject {
             putJsonArray("delete") {
@@ -336,7 +381,7 @@ class FluxAPI {
         return withContext(Dispatchers.IO) {
             val response = client.post("$serverAddress/history") {
                 contentType(ContentType.Application.Json)
-                body = deleteBody
+                setBody(deleteBody)
             }
             val responseBody = response.bodyAsText()
 
@@ -346,7 +391,6 @@ class FluxAPI {
     }
 
 
-    @OptIn(InternalAPI::class)
     suspend fun cancelWorkflow(id: String) {
         val deleteBody = buildJsonObject {
             putJsonArray("delete") {
@@ -357,7 +401,7 @@ class FluxAPI {
         return withContext(Dispatchers.IO) {
             val response = client.post("$serverAddress/queue") {
                 contentType(ContentType.Application.Json)
-                body = deleteBody
+                setBody(deleteBody)
             }
             val responseBody = response.bodyAsText()
 

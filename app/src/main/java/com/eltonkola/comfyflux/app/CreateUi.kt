@@ -221,7 +221,11 @@ fun CreateUi(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (progressUiState.error.isNotEmpty()) {
-                Text("Error: ${progressUiState.error}")
+                Text(
+                    text = "Error: ${progressUiState.error}",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
             }
 
         }

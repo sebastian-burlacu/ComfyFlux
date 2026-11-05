@@ -27,6 +27,13 @@ sealed class WSMessage {
     ) : WSMessage()
 
     @Serializable
+    data class ExecutionStartMessage(
+        @SerialName("prompt_id")
+        override val promptId: String,
+        val timestamp: Long
+    ) : WSMessage()
+
+    @Serializable
     data class ExecutionCachedMessage(
         @SerialName("prompt_id")
         override val promptId: String,
@@ -66,6 +73,35 @@ sealed class WSMessage {
     ) : WSMessage()
 
     @Serializable
+    data class ExecutionErrorMessage(
+        @SerialName("prompt_id")
+        override val promptId: String? = null,
+        @SerialName("node_id")
+        val nodeId: String? = null,
+        @SerialName("node_type")
+        val nodeType: String? = null,
+        val executed: List<String> = emptyList(),
+        @SerialName("exception_message")
+        val exceptionMessage: String? = null,
+        @SerialName("exception_type")
+        val exceptionType: String? = null
+    ) : WSMessage()
+
+    @Serializable
+    data class ExecutionInterruptedMessage(
+        @SerialName("prompt_id")
+        override val promptId: String? = null,
+        val timestamp: Long
+    ) : WSMessage()
+
+    // Any server event we do not model yet (bypass, executor_*, ...): log it
+    // instead of crashing the connection.
+    data class Unknown(
+        val type: String?,
+        override val promptId: String? = null
+    ) : WSMessage()
+
+    @Serializable
     data class Status(
         @SerialName("exec_info")
         val execInfo: ExecInfo? = null
@@ -100,16 +136,23 @@ sealed class WSMessage {
             return when (baseMessage.type) {
                 null -> json.decodeFromString<PromptMessage>(jsonString)
                 "status" -> json.decodeFromString<StatusMessage>(data)
+                "execution_start" -> json.decodeFromString<ExecutionStartMessage>(data)
                 "execution_cached" -> json.decodeFromString<ExecutionCachedMessage>(data)
                 "executing" -> json.decodeFromString<ExecutingMessage>(data)
                 "progress" -> json.decodeFromString<ProgressMessage>(data)
                 "executed" -> json.decodeFromString<ExecutedMessage>(data)
                 "execution_success" -> json.decodeFromString<ExecutionSuccessMessage>(data)
-                else -> throw IllegalArgumentException("Unknown message type: ${baseMessage.type}")
+                "execution_error" -> json.decodeFromString<ExecutionErrorMessage>(data)
+                "execution_interrupted" -> json.decodeFromString<ExecutionInterruptedMessage>(data)
+                else -> Unknown(baseMessage.type)
             }
         }
     }
 
     @Serializable
-    private data class BaseMessage(val type: String? = null)
+    private data class BaseMessage(
+        val type: String? = null,
+        @SerialName("prompt_id")
+        val promptId: String? = null
+    )
 }
