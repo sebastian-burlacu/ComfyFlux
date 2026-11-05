@@ -79,6 +79,9 @@ data class ImageGenerationUiState(
     // 0 keeps whatever the workflow itself specifies.
     val cfg: Float = 0f,
     val steps: Int = 0,
+    // Model choices detected on the selected workflow + files picked for them.
+    val modelSlots: List<ModelSlot> = emptyList(),
+    val modelOverrides: Map<String, String> = emptyMap(),
     val recentPrompts: List<String> = emptyList()
 )
 

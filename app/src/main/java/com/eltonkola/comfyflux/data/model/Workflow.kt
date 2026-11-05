@@ -140,7 +140,7 @@ fun Workflow.promptNodeIds(): List<String> {
     return found
 }
 
-private fun Workflow.replaceInputs(id: String, replacements: Map<String, JsonPrimitive>) {
+internal fun Workflow.replaceInputs(id: String, replacements: Map<String, JsonPrimitive>) {
     val node = this[id] ?: return
     val updated = buildJsonObject {
         node.inputs.jsonObject.forEach { (key, value) ->

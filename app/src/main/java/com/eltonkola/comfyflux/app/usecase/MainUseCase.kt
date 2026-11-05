@@ -16,6 +16,8 @@ import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
 import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
+import com.eltonkola.comfyflux.data.model.applyModelOverrides
+import com.eltonkola.comfyflux.data.model.detectModelSlots
 import com.eltonkola.comfyflux.data.model.updateCfgAndSteps
 import com.eltonkola.comfyflux.data.model.updatePrompt
 import com.eltonkola.comfyflux.data.model.updateSeed
@@ -72,8 +74,13 @@ class MainUseCase(
     }
 
     fun updateWorkflow(workflow: WorkflowFile) {
-        _uiState.update { it.copy(workflow = workflow) }
+        _uiState.update { it.copy(workflow = workflow, modelSlots = emptyList(), modelOverrides = emptyMap()) }
         saveDraft()
+    }
+
+    /** Pick a model file for one detected slot (ModelSlot.key -> filename). */
+    fun setModelChoice(key: String, value: String) {
+        _uiState.update { it.copy(modelOverrides = it.modelOverrides + (key to value)) }
     }
 
     fun setImageWidth(width: Int) {
@@ -154,6 +161,7 @@ class MainUseCase(
                 _uiState.update { it.copy(loadingStats = false, stats = stats, serverError = null) }
                 logStore.info("server", "connected to $url (${stats.system.os}, python ${stats.system.python_version})")
                 refreshServerWorkflows()
+                refreshModelSlots()
             }
             .onFailure { e ->
                 val friendly = friendlyConnectionError(e)
@@ -179,6 +187,39 @@ class MainUseCase(
             }
     }
 
+    // Recomputed only when the server+workflow pair changes or slots were cleared.
+    private var slotsKey: String? = null
+
+    /**
+     * Recompute the model choices offered for the selected workflow (the
+     * "pick your checkpoint/lora" part of the web UI, minus the graph).
+     * Needs the connection for /object_info; failures are silent because the
+     * section is an enhancement, never a blocker for generating.
+     */
+    suspend fun refreshModelSlots() {
+        val state = _uiState.value
+        if (state.stats == null) return
+        val key = "${state.server}|${state.workflow.name}"
+        if (key == slotsKey && state.modelSlots.isNotEmpty()) return
+        runCatching {
+            val workflow = loadRawWorkflow()
+            val slots = detectModelSlots(workflow, fluxAPI.fetchObjectInfo())
+            slotsKey = key
+            _uiState.update { state2 ->
+                state2.copy(
+                    modelSlots = slots,
+                    // Drop overrides from a previous workflow or files the
+                    // server no longer lists.
+                    modelOverrides = state2.modelOverrides.filter { (k, v) ->
+                        slots.any { it.key == k && it.options.contains(v) }
+                    }
+                )
+            }
+        }.onFailure { e ->
+            logStore.debug("client", "model slot detection skipped: ${e.message}")
+        }
+    }
+
     private fun friendlyConnectionError(e: Throwable): String = when (e) {
         is UnknownHostException ->
             "Hostname not found. Use the LAN address of the machine running ComfyUI (e.g. http://192.168.1.5:8188) and make sure the phone is on the same Wi-Fi."
@@ -194,17 +235,10 @@ class MainUseCase(
     }
 
 
-    private suspend fun loadWorkflow(): PromptRequest {
-        val seed = if (uiState.value.isRandom) {
-            val newSeed = generateRandom16DigitNumber()
-            _uiState.update { it.copy(seed = newSeed) }
-            newSeed
-        } else {
-            uiState.value.seed
-        }
-
+    /** Parse the currently selected workflow into API form, without patching it. */
+    private suspend fun loadRawWorkflow(): Workflow {
         val workflowConfig = _uiState.value.workflow
-        val workflow: Workflow = if (workflowConfig.isServer) {
+        return if (workflowConfig.isServer) {
             val raw = fluxAPI.fetchWorkflowContent(workflowConfig.name)
             val element = try {
                 ComfyJson.parseToJsonElement(raw)
@@ -222,6 +256,18 @@ class MainUseCase(
                 ?: throw Exception("Error reading workflow!")
             Json.decodeFromString<Workflow>(workflowInput)
         }
+    }
+
+    private suspend fun loadWorkflow(): PromptRequest {
+        val seed = if (uiState.value.isRandom) {
+            val newSeed = generateRandom16DigitNumber()
+            _uiState.update { it.copy(seed = newSeed) }
+            newSeed
+        } else {
+            uiState.value.seed
+        }
+
+        val workflow = loadRawWorkflow()
         workflow.updateSizeAndBatch(
             width = uiState.value.width,
             height = uiState.value.height,
@@ -231,6 +277,7 @@ class MainUseCase(
             cfg = uiState.value.cfg,
             steps = uiState.value.steps
         )
+        workflow.applyModelOverrides(_uiState.value.modelOverrides)
         workflow.updatePrompt(prompt = uiState.value.prompt.cleanPrompt())
         workflow.updateSeed(seed = seed)
         return PromptRequest(fluxAPI.clientId, workflow)

@@ -1,0 +1,110 @@
+package com.eltonkola.comfyflux.data.model
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.int
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ModelSlotsTest {
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private val objectInfo = json.parseToJsonElement(
+        """
+        {
+          "CheckpointLoaderSimple": {"input": {"required": {"ckpt_name":
+              [["flux.safetensors", "sd_xl base.safetensors"], {"control_after_generate": true}]}}},
+          "UnetLoaderGGUF": {"input": {"required": {"unet_name":
+              ["krea GGUF.safetensors", "qwen fp8.safetensors"]}}},
+          "VAELoader": {"input": {"required": {"vae_name": [["ae.safetensors"]]}}},
+          "UNETLoader": {"input": {"required": {"unet_name": [["flux1-dev.safetensors"]]}}},
+          "DualCLIPLoader": {"input": {"required": {"clip_name1": [["t5xxl_fp8_e4m3fn.safetensors"]],
+              "clip_name2": [["clip_l.safetensors"]]}}},
+          "KSampler": {"input": {"required": {"seed": ["INT", {"default": 0}],
+              "sampler_name": [["euler", "dpmpp"], {}]}}},
+          "MysteryNode": {"input": {"required": {"model_name": "STRING"}}}
+        }
+        """.trimIndent()
+    ).jsonObject
+
+    private fun workflow(): Workflow = json.decodeFromString(
+        """
+        {
+          "7": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "krea GGUF.safetensors"}},
+          "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "flux.safetensors"}},
+          "3": {"class_type": "KSampler", "inputs": {"seed": 5, "sampler_name": "euler"}},
+          "9": {"class_type": "MysteryNode", "inputs": {"model_name": "anything"}}
+        }
+        """.trimIndent()
+    )
+
+    @Test
+    fun offersOnlyServerAdvertisedModelFileChoices() {
+        val slots = detectModelSlots(workflow(), objectInfo)
+
+        // KSampler's sampler_name and MysteryNode's free-text model_name are
+        // never offered; the two loaders and their current values are.
+        assertEquals(
+            listOf("1|ckpt_name", "7|unet_name"),
+            slots.map { it.key }
+        )
+        assertEquals("flux.safetensors", slots.first().current)
+        assertEquals(
+            listOf("flux.safetensors", "sd_xl base.safetensors"),
+            slots.first().options
+        )
+    }
+
+    @Test
+    fun ordersCheckpointsBeforeOtherSlots() {
+        val slots = detectModelSlots(workflow(), objectInfo)
+        assertEquals("CheckpointLoaderSimple", slots.first().classType)
+        assertEquals("Checkpoint", slots.first().label)
+        assertEquals("UNET (GGUF)", slots[1].label)
+    }
+
+    @Test
+    fun appliesOverridesAndIgnoresStaleKeys() {
+        val wf = workflow()
+        wf.applyModelOverrides(
+            mapOf(
+                "7|unet_name" to "qwen fp8.safetensors",
+                "99|vae_name" to "ghost.safetensors",
+                "3|seed" to "nope",
+            )
+        )
+
+        assertEquals(
+            "qwen fp8.safetensors",
+            wf.getValue("7").inputs.jsonObject["unet_name"]!!.jsonPrimitive.content
+        )
+        assertNullSafe(wf, "99")
+        // KSampler input untouched: unknown node id and unlisted inputs never apply
+        assertEquals(5, wf.getValue("3").inputs.jsonObject["seed"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun detectsSlotsInBundledFluxWorkflow() {
+        // The shipped flux-dev graph loads UNET + a CLIP pair + VAE through
+        // separate loaders; all must surface, ordered, for bundled workflows
+        // exactly as for server ones.
+        val wf = json.decodeFromString<Workflow>(
+            java.io.File("src/main/assets/workflow_flux_dev.json").readText()
+        )
+        val slots = detectModelSlots(wf, objectInfo)
+        assertEquals(
+            listOf("unet_name", "clip_name1", "clip_name2", "vae_name"),
+            slots.map { it.input }
+        )
+        assertEquals("UNET", slots.first().label)
+        assertEquals("flux1-dev.sft", slots.first().current)
+    }
+
+    private fun assertNullSafe(wf: Workflow, id: String) {
+        assertTrue("node $id must not be created", wf[id] == null)
+    }
+}

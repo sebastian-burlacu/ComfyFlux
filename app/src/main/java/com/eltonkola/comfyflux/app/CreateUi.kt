@@ -26,6 +26,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -412,6 +416,69 @@ fun AdvancedTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
         SeedSelector(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
         SamplerSettingsSelector(uiState = uiState, viewModel = viewModel)
+        Spacer(modifier = Modifier.height(8.dp))
+        ModelSlotsSelector(uiState = uiState, viewModel = viewModel)
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ModelSlotsSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
+    if (uiState.modelSlots.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = "Models",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = "Choose the model files this run uses; the list comes from the server.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+
+        uiState.modelSlots.forEach { slot ->
+            val selected = uiState.modelOverrides[slot.key] ?: slot.current
+            var expanded by remember(slot.key) { mutableStateOf(false) }
+
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it },
+            ) {
+                OutlinedTextField(
+                    value = selected,
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    label = { Text(slot.label, fontSize = 13.sp) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    slot.options.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option, fontSize = 13.sp) },
+                            onClick = {
+                                expanded = false
+                                viewModel.setModelChoice(slot.key, option)
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
     }
 }
 

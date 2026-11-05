@@ -82,7 +82,12 @@ class MainViewModel(
     fun updateWorkflow(workflow: WorkflowFile) {
         viewModelScope.launch {
             mainUseCase.updateWorkflow(workflow)
+            mainUseCase.refreshModelSlots()
         }
+    }
+
+    fun setModelChoice(key: String, value: String) {
+        mainUseCase.setModelChoice(key, value)
     }
 
     fun setImageWidth(width: Int) {

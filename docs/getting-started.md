@@ -44,10 +44,15 @@ Two sources, picked from the drawer on the Create screen:
 
 1. Pick a workflow, write a prompt.
 2. **Size / Batch** tab: width, height, batch count.
-3. **More** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
+3. **Advanced** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
    step count. CFG/steps set to `0` keep whatever the workflow itself defines;
    any non-zero value overrides every sampler in the graph.
-4. Hit generate. Progress, current node and queue position show live; finished
+4. **Models** (Advanced tab): when the workflow loads model files the server
+   can list (checkpoints, UNETs, LoRAs, VAEs, CLIPs, ControlNets), a dropdown
+   appears for each — the same "pick your safetensors" step as in the web UI,
+   without the graph. Options come live from the server; selections reset
+   when you switch workflows.
+5. Hit generate. Progress, current node and queue position show live; finished
    images land in the History tab and in the ComfyUI output folder.
 
 Rerunning a past generation: History tab → the refresh icon on a row re-queues

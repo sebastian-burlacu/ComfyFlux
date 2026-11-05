@@ -22,6 +22,7 @@ recognises API format and skips conversion.
 | Size / batch | `EmptyLatentImage` width/height/batch_size |
 | Seed | `KSampler` seed / `KSamplerAdvanced` & `RandomNoise` noise_seed |
 | CFG / steps | `cfg` and `steps` on every `KSampler`/`KSamplerAdvanced` (cfg only for `CFGGuider`); `0` = leave untouched |
+| Models | The file input of any loader node the server can list files for (`ckpt_name`, `unet_name`, `lora_name`, `vae_name`, `clip_name*`, `control_net_name`, ...) — detection is driven by the server's own `object_info`, so custom GGUF loaders work too |
 
 Everything else in the graph runs exactly as you built it in the web UI.
 
