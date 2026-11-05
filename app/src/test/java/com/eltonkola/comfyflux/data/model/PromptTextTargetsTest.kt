@@ -38,7 +38,7 @@ class PromptTextTargetsTest {
           "9": {"class_type": "UNETLoader", "inputs": {"unet_name": "x.safetensors"}},
           "2": {"class_type": "TextEncodeQwenImage21", "inputs": {"prompt": [3, 0], "clip_vision_output": [8, 0]}},
           "8": {"class_type": "CLIPVisionEncode", "inputs": {}},
-          "3": {"class_type": "ComfySwitchNode", "inputs": {"on_false": "fallback literal", "on_true": [4, 0]}},
+          "3": {"class_type": "ComfySwitchNode", "inputs": {"on_false": "fallback literal", "on_true": [4, 0], "switch": false}},
           "4": {"class_type": "TextGenerate", "inputs": {"prompt": "old user prompt", "system": [5, 0]}},
           "5": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "# Rewriting Expert system prompt"}}
         }
@@ -70,23 +70,53 @@ class PromptTextTargetsTest {
     }
 
     @Test
-    fun fallbackWalkPatchesUserPromptButNotSystemText() {
+    fun switchNodePatchesActiveBranchAndLinkedGenerator() {
+        // Qwen-image 2.1 template: one prompt box feeds both the switch's
+        // on_false branch (ACTIVE while switch=false) and TextGenerate.prompt.
+        // The browser writes both; patching only the generator produced the
+        // reported "workflow not getting prompt" (switch=false runs on_false).
         val wf = customEncoderGraph
+        assertEquals("fallback literal", wf.getPrompt()) // active branch is what runs
+
         wf.updatePrompt("statue in a garden")
 
         assertEquals(
             "statue in a garden",
+            wf.getValue("3").inputs.jsonObject["on_false"]!!.jsonPrimitive.content
+        )
+        assertEquals(
+            "statue in a garden",
             wf.getValue("4").inputs.jsonObject["prompt"]!!.jsonPrimitive.content
         )
-        // LLM system prompt and switch literals stay untouched.
+        // LLM system prompt stays untouched.
         assertEquals(
             "# Rewriting Expert system prompt",
             wf.getValue("5").inputs.jsonObject["value"]!!.jsonPrimitive.content
         )
-        assertEquals(
-            "fallback literal",
-            wf.getValue("3").inputs.jsonObject["on_false"]!!.jsonPrimitive.content
+        assertEquals("statue in a garden", wf.getPrompt())
+    }
+
+    @Test
+    fun switchOnFollowsTheTrueBranchGenerator() {
+        val wf = json.decodeFromString<Workflow>(
+            """
+            {
+              "1": {"class_type": "KSampler", "inputs": {"positive": [2, 1], "model": [9, 0]}},
+              "9": {"class_type": "UNETLoader", "inputs": {"unet_name": "x.safetensors"}},
+              "2": {"class_type": "TextEncodeQwenImage21", "inputs": {"prompt": [3, 0]}},
+              "3": {"class_type": "ComfySwitchNode", "inputs": {"on_false": "fallback literal", "on_true": [4, 0], "switch": true}},
+              "4": {"class_type": "TextGenerate", "inputs": {"prompt": "old user prompt", "system": [5, 0]}},
+              "5": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "# system prompt"}}
+            }
+            """.trimIndent()
         )
+        wf.updatePrompt("lighthouse at dusk")
+
+        assertEquals("lighthouse at dusk", wf.getValue("4").inputs.jsonObject["prompt"]!!.jsonPrimitive.content)
+        // Inactive branch keeps its file text.
+        assertEquals("fallback literal", wf.getValue("3").inputs.jsonObject["on_false"]!!.jsonPrimitive.content)
+        // getPrompt reads through the active branch.
+        assertEquals("lighthouse at dusk", wf.getPrompt())
     }
 
     @Test

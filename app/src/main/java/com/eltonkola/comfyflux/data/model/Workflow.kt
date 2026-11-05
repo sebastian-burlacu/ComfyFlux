@@ -19,6 +19,7 @@ import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -195,28 +196,101 @@ fun Workflow.updateSizeAndBatch(width: Int, height: Int, batchSize: Int) {
 fun Workflow.promptTextTargets(): List<Pair<String, String>> {
     val targets = mutableListOf<Pair<String, String>>()
 
-    promptNodeIds().forEach { id ->
-        val node = this[id] ?: return@forEach
-        val key = TEXT_LITERAL_KEYS.firstOrNull { it in node.inputs.jsonObject } ?: return@forEach
-        resolveLiteralTarget(id, key)?.let { targets += it }
+    conditioningTextSources().forEach { (id, key) ->
+        resolveLiteralTarget(id, key)?.forEach { t -> if (t !in targets) targets += t }
     }
 
-    if (targets.isEmpty()) targets += broadTextSearch()
+    // The broad pass keeps sibling slots fed by the same subgraph input in
+    // sync (e.g. the Qwen template wires one prompt box to both the switch's
+    // on_false branch and TextGenerate.prompt), matching what the web UI
+    // sends. Deduped, never replacing the precise link targets found first.
+    broadTextSearch().forEach { t -> if (t !in targets) targets += t }
+
+    // Last resort (simple graphs with an unlinked CLIPTextEncode): patch the
+    // encoder directly so the prompt is never silently dropped.
+    if (targets.isEmpty()) {
+        promptNodeIds().forEach { id ->
+            val node = this[id] ?: return@forEach
+            TEXT_LITERAL_KEYS.firstOrNull { it in node.inputs.jsonObject }?.let { targets += id to it }
+        }
+    }
     return targets
 }
+
+/**
+ * (node, key) text slots along the positive conditioning chain, whatever
+ * class they sit on: custom encoders (TextEncodeQwenImage21.prompt) feed the
+ * sampler just like CLIPTextEncode and must be recognized.
+ */
+private fun Workflow.conditioningTextSources(): List<Pair<String, String>> {
+    val out = mutableListOf<Pair<String, String>>()
+    val visited = mutableSetOf<String>()
+    val queue = ArrayDeque<String>()
+
+    filterValues { it.classType in CONDITIONING_CONSUMERS }
+        .forEach { (_, node) -> queue.addAll(node.conditioningLinks()) }
+
+    while (queue.isNotEmpty()) {
+        val id = queue.removeFirst()
+        if (!visited.add(id)) continue
+        val node = this[id] ?: continue
+        TEXT_LITERAL_KEYS.firstOrNull { it in node.inputs.jsonObject }?.let { out += id to it }
+        queue.addAll(node.conditioningLinks())
+    }
+    return out
+}
+
+/** Nodes that route one of two inputs based on a boolean "switch". */
+private fun isSwitchLike(node: Node<JsonElement>): Boolean =
+    node.classType == "ComfySwitchNode" ||
+        (node.inputs.jsonObject.containsKey("switch") &&
+            (node.inputs.jsonObject.containsKey("on_true") || node.inputs.jsonObject.containsKey("on_false")))
 
 /** Where the actual text lives for input [key] of node [id]: literal or behind a link. */
 private fun Workflow.resolveLiteralTarget(id: String, key: String): List<Pair<String, String>> {
     val node = this[id] ?: return emptyList()
-    val value = node.inputs.jsonObject[key] ?: return emptyList()
+    var value: JsonElement = node.inputs.jsonObject[key] ?: return emptyList()
     if (value !is JsonArray) return listOf(id to key)
 
-    val srcId = value.linkedNodeId() ?: return emptyList()
-    val src = this[srcId] ?: return emptyList()
-    val srcKey = TEXT_LITERAL_KEYS.firstOrNull { k ->
-        src.inputs.jsonObject[k]?.jsonPrimitiveOrNull?.isString == true
-    } ?: return emptyList()
-    return listOf(srcId to srcKey)
+    repeat(4) {
+        val srcId = value.linkedNodeId() ?: return emptyList()
+        val src = this[srcId] ?: return emptyList()
+
+        if (isSwitchLike(src)) {
+            // Only the ACTIVE branch carries the text that runs. When the
+            // branch is an inline string, target it (and the inline sibling,
+            // so flipping the switch in a saved run stays coherent).
+            val on = src.inputs.jsonObject["switch"]?.jsonPrimitiveOrNull?.booleanOrNull == true
+            val active = if (on) "on_true" else "on_false"
+            val alt = if (on) "on_false" else "on_true"
+            val branch = src.inputs.jsonObject[active]
+            if (branch is JsonArray) {
+                value = branch
+                return@repeat
+            }
+            if (branch?.jsonPrimitiveOrNull?.isString == true) {
+                val out = mutableListOf(srcId to active)
+                if (src.inputs.jsonObject[alt]?.jsonPrimitiveOrNull?.isString == true) {
+                    out += srcId to alt
+                }
+                return out
+            }
+            return emptyList()
+        }
+
+        val srcKey = TEXT_LITERAL_KEYS.firstOrNull { k ->
+            src.inputs.jsonObject[k]?.jsonPrimitiveOrNull?.isString == true
+        }
+        if (srcKey != null) return listOf(srcId to srcKey)
+
+        // Pass-through nodes (PreviewAny etc.): a single linked input means
+        // the text comes from it; hop over the node instead of giving up.
+        val passthrough = src.inputs.jsonObject.values
+            .filterIsInstance<JsonArray>()
+            .singleOrNull() ?: return emptyList()
+        value = passthrough
+    }
+    return emptyList()
 }
 
 /**
