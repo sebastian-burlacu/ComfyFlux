@@ -54,7 +54,7 @@ fun ServerConnectionUi(viewModel: MainViewModel, uiState: ImageGenerationUiState
             val supportingText = if (uiState.loadingStats && uiState.stats == null) {
                 "Connecting..."
             } else if (uiState.stats == null) {
-                "Cant reach the server!"
+                uiState.serverError ?: "Can't reach the server!"
             } else {
                 "Connected to: ${uiState.stats.system.os} \nPython: ${uiState.stats.system.python_version}"
             }

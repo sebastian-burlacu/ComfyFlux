@@ -63,6 +63,7 @@ data class ImageGenerationUiState(
 
     val loadingStats: Boolean = false,
     val stats: SystemStats? = null,
+    val serverError: String? = null,
 
     val workflow: WorkflowFile = workflows.first(),
 

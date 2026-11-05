@@ -1,6 +1,8 @@
 package com.eltonkola.comfyflux.data
 
 import android.content.SharedPreferences
+import com.eltonkola.comfyflux.data.network.DEFAULT_URL
+import com.eltonkola.comfyflux.data.network.normalizeServerUrl
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +26,17 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         const val DARK_THEME = "dark_theme"
         const val SYSTEM_THEME = "system_theme"
         const val DYNAMIC_COLOR = "dynamic_color"
+        const val SERVER_URL = "server_url"
+    }
+
+    fun serverUrl(): String {
+        return normalizeServerUrl(
+            sharedPreferences.getString(SERVER_URL, DEFAULT_URL) ?: DEFAULT_URL
+        )
+    }
+
+    fun setServerUrl(url: String) {
+        sharedPreferences.edit().putString(SERVER_URL, url).apply()
     }
 
     fun groqApi(): String {

@@ -80,7 +80,18 @@ data class QueuePromptResponse(
     val node_errors: Map<String, String>
 )
 
-const val DEFAULT_URL = "http://192.168.0.2:8188"
+const val DEFAULT_URL = "http://192.168.1.5:8188"
+
+/**
+ * Accepts what users actually type ("192.168.1.5:8188", trailing slashes,
+ * surrounding whitespace) and turns it into a usable base URL.
+ */
+fun normalizeServerUrl(raw: String): String {
+    var url = raw.trim().removeSuffix("/")
+    if (url.isEmpty()) return ""
+    if (!url.startsWith("http://") && !url.startsWith("https://")) url = "http://$url"
+    return url
+}
 
 fun extractAddressAndPort(url: String): Pair<String, Int> {
     val uri = Uri.parse(url)
@@ -126,7 +137,7 @@ class FluxAPI {
 
     private var serverAddress = DEFAULT_URL
 
-    suspend fun setServerAddress(address: String) {
+    fun setServerAddress(address: String) {
         serverAddress = address
     }
 
@@ -303,21 +314,14 @@ class FluxAPI {
                 message is WSMessage.ExecutionInterruptedMessage
     }
 
-    suspend fun checkSystemStats(): SystemStats? {
+    suspend fun checkSystemStats(): SystemStats {
         Log.d("FluxAPI", "call checkSystemStats")
-        return try {
-            val response = client.get("$serverAddress/system_stats") {
-                contentType(ContentType.Application.Json)
-            }
-            val responseBody = response.bodyAsText()
-            Log.d("FluxAPI", "Received response: $responseBody")
-            val stats = Json.decodeFromString<SystemStats>(responseBody)
-            Log.d("FluxAPI", "call checkSystemStats stats: $stats")
-            stats
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
+        val response = client.get("$serverAddress/system_stats") {
+            contentType(ContentType.Application.Json)
         }
+        val responseBody = response.bodyAsText()
+        Log.d("FluxAPI", "Received response: $responseBody")
+        return Json.decodeFromString<SystemStats>(responseBody)
     }
 
     suspend fun fetchHistory(): List<HistoryItem> {

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
@@ -13,26 +14,37 @@ import com.eltonkola.comfyflux.data.model.updateSeed
 import com.eltonkola.comfyflux.data.model.updateSizeAndBatch
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
+import com.eltonkola.comfyflux.data.network.normalizeServerUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import kotlin.random.Random
 
 class MainUseCase(
     private val fluxAPI: FluxAPI,
     private val groqAPI: GroqAPI,
+    private val appSettings: AppSettings,
     private val applicationContext: Application
 ) {
 
-    private val _uiState = MutableStateFlow(ImageGenerationUiState())
+    private val _uiState = MutableStateFlow(
+        ImageGenerationUiState(server = appSettings.serverUrl())
+    )
     val uiState: StateFlow<ImageGenerationUiState> = _uiState.asStateFlow()
 
+    init {
+        fluxAPI.setServerAddress(appSettings.serverUrl())
+    }
+
     suspend fun updateServerUrl(url: String) {
-        fluxAPI.setServerAddress(url)
         _uiState.update { it.copy(server = url) }
     }
 
@@ -74,9 +86,32 @@ class MainUseCase(
     }
 
     suspend fun checkStatus() {
-        _uiState.update { it.copy(loadingStats = true) }
-        val status = fluxAPI.checkSystemStats()
-        _uiState.update { it.copy(loadingStats = false, stats = status) }
+        val url = normalizeServerUrl(uiState.value.server)
+        _uiState.update { it.copy(loadingStats = true, server = url) }
+        fluxAPI.setServerAddress(url)
+        runCatching { fluxAPI.checkSystemStats() }
+            .onSuccess { stats ->
+                // Only remember URLs that actually answer.
+                appSettings.setServerUrl(url)
+                _uiState.update { it.copy(loadingStats = false, stats = stats, serverError = null) }
+            }
+            .onFailure { e ->
+                _uiState.update {
+                    it.copy(loadingStats = false, stats = null, serverError = friendlyConnectionError(e))
+                }
+            }
+    }
+
+    private fun friendlyConnectionError(e: Throwable): String = when (e) {
+        is UnknownHostException ->
+            "Hostname not found. Use the LAN address of the machine running ComfyUI (e.g. http://192.168.1.5:8188) and make sure the phone is on the same Wi-Fi."
+        is ConnectException ->
+            "Connection refused. Is ComfyUI started with --listen, and is the port correct (default 8188)?"
+        is SocketTimeoutException, is TimeoutCancellationException ->
+            "The server did not answer in time."
+        is IllegalArgumentException ->
+            "Invalid URL. Use the format http://<ip>:8188."
+        else -> "${e.javaClass.simpleName}: ${e.message ?: "connection failed"}"
     }
 
 
@@ -110,6 +145,7 @@ class MainUseCase(
         }
         start()
         try {
+            fluxAPI.setServerAddress(normalizeServerUrl(uiState.value.server))
             val prompt = loadWorkflow()
             Log.d("FluxApp", "prompt: $prompt")
             withContext(Dispatchers.IO) {
