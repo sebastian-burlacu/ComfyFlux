@@ -144,14 +144,18 @@ private fun Workflow.replaceInputs(id: String, replacements: Map<String, JsonPri
     val node = this[id] ?: return
     val updated = buildJsonObject {
         node.inputs.jsonObject.forEach { (key, value) ->
-            put(key, replacements[key] ?: value)
+            // Never clobber a link [nodeId, slot] with a literal: linked
+            // values (e.g. size from a ResolutionSelector) belong to their source node.
+            put(key, if (value is JsonArray) value else replacements[key] ?: value)
         }
     }
     this[id] = node.copy(inputs = updated)
 }
 
+private val EMPTY_LATENT_NODES = setOf("EmptyLatentImage", "EmptySD3LatentImage")
+
 fun Workflow.updateSizeAndBatch(width: Int, height: Int, batchSize: Int) {
-    filterValues { it.classType == "EmptyLatentImage" }
+    filterValues { it.classType in EMPTY_LATENT_NODES }
         .keys.toList()
         .forEach { id ->
             replaceInputs(

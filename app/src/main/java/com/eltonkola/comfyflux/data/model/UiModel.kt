@@ -66,6 +66,7 @@ data class ImageGenerationUiState(
     val serverError: String? = null,
 
     val workflow: WorkflowFile = workflows.first(),
+    val serverWorkflows: List<WorkflowFile> = emptyList(),
 
     val prompt: String = "",
     val width: Int = 512,

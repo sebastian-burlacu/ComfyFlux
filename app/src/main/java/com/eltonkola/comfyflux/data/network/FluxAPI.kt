@@ -16,6 +16,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -36,10 +37,16 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.putJsonArray
 import java.util.UUID
 
@@ -144,9 +151,44 @@ class FluxAPI {
     }
 
     private var serverAddress = DEFAULT_URL
+    private var objectInfoCache: JsonObject? = null
 
     fun setServerAddress(address: String) {
+        if (serverAddress != address) objectInfoCache = null
         serverAddress = address
+    }
+
+    suspend fun fetchObjectInfo(): JsonObject {
+        objectInfoCache?.let { return it }
+        val response = client.get("$serverAddress/object_info")
+        val info = ComfyJson.parseToJsonElement(response.bodyAsText()).jsonObject
+        objectInfoCache = info
+        return info
+    }
+
+    /** Workflow names saved in the ComfyUI web UI (server user data). */
+    suspend fun fetchWorkflowNames(): List<String> {
+        val response = client.get("$serverAddress/userdata") {
+            parameter("dir", "workflows")
+        }
+        val el = ComfyJson.parseToJsonElement(response.bodyAsText())
+        val names = when (el) {
+            is JsonArray -> el.mapNotNull { it as? JsonPrimitive }
+                .filter { it.isString }.map { it.content }
+            is JsonObject -> (el["files"] as? JsonArray)?.mapNotNull { entry ->
+                (entry as? JsonPrimitive)?.contentOrNull
+                    ?: entry?.jsonObject?.get("path")?.jsonPrimitive?.contentOrNull
+            } ?: emptyList()
+            else -> emptyList()
+        }
+        return names.filter { it.endsWith(".json") }.map { it.removeSuffix(".json") }.sorted()
+    }
+
+    suspend fun fetchWorkflowContent(name: String): String {
+        // aiohttp matches the raw path: %2F keeps the file route's single segment.
+        val encoded = java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+        val response = client.get("$serverAddress/userdata/workflows%2F$encoded")
+        return response.bodyAsText()
     }
 
     private suspend fun queuePrompt(promptRequest: PromptRequest): String {

@@ -4,7 +4,8 @@ data class WorkflowFile(
     val name: String,
     val description: String,
     val workflowUri: String,
-    val isAsset: Boolean
+    val isAsset: Boolean,
+    val isServer: Boolean = false,
 )
 
 val workflows = listOf(

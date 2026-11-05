@@ -8,10 +8,12 @@ import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
+import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
 import com.eltonkola.comfyflux.data.model.updatePrompt
 import com.eltonkola.comfyflux.data.model.updateSeed
 import com.eltonkola.comfyflux.data.model.updateSizeAndBatch
+import com.eltonkola.comfyflux.data.network.ComfyJson
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
 import com.eltonkola.comfyflux.data.network.normalizeServerUrl
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.SerializationException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -95,12 +98,25 @@ class MainUseCase(
                 // Only remember URLs that actually answer.
                 appSettings.setServerUrl(url)
                 _uiState.update { it.copy(loadingStats = false, stats = stats, serverError = null) }
+                refreshServerWorkflows()
             }
             .onFailure { e ->
                 _uiState.update {
                     it.copy(loadingStats = false, stats = null, serverError = friendlyConnectionError(e))
                 }
             }
+    }
+
+    /** Workflows saved in the ComfyUI web UI; a listing failure must not break the connection status. */
+    private suspend fun refreshServerWorkflows() {
+        val names = runCatching { fluxAPI.fetchWorkflowNames() }.getOrDefault(emptyList())
+        _uiState.update { state ->
+            state.copy(
+                serverWorkflows = names.map {
+                    WorkflowFile(it, "Saved from the ComfyUI web UI", "server://$it", isAsset = false, isServer = true)
+                }
+            )
+        }
     }
 
     private fun friendlyConnectionError(e: Throwable): String = when (e) {
@@ -118,7 +134,7 @@ class MainUseCase(
     }
 
 
-    private fun loadWorkflow(): PromptRequest {
+    private suspend fun loadWorkflow(): PromptRequest {
         val seed = if (uiState.value.isRandom) {
             val newSeed = generateRandom16DigitNumber()
             _uiState.update { it.copy(seed = newSeed) }
@@ -128,10 +144,20 @@ class MainUseCase(
         }
 
         val workflowConfig = _uiState.value.workflow
-        val workflowInput = applicationContext.getWorkflowAsText(workflowConfig) ?: throw Exception(
-            "Error reading workflow!"
-        )
-        val workflow = Json.decodeFromString<Workflow>(workflowInput)
+        val workflow: Workflow = if (workflowConfig.isServer) {
+            val raw = fluxAPI.fetchWorkflowContent(workflowConfig.name)
+            val element = ComfyJson.parseToJsonElement(raw)
+            if (element is JsonObject && element.containsKey("nodes")) {
+                WorkflowConverter(fluxAPI.fetchObjectInfo()).convert(element)
+            } else {
+                // Already API format (e.g. saved via "Save (Export)").
+                ComfyJson.decodeFromString(element.toString())
+            }
+        } else {
+            val workflowInput = applicationContext.getWorkflowAsText(workflowConfig)
+                ?: throw Exception("Error reading workflow!")
+            Json.decodeFromString<Workflow>(workflowInput)
+        }
         workflow.updateSizeAndBatch(
             width = uiState.value.width,
             height = uiState.value.height,

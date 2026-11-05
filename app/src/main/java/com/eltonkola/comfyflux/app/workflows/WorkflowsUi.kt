@@ -37,6 +37,7 @@ import com.eltonkola.comfyflux.ui.theme.ikona.WorkflowIc
 fun WorkflowsUi(onSelect: (WorkflowFile) -> Unit, uiState: ImageGenerationUiState) {
 
     var samplesOpen by remember { mutableStateOf(true) }
+    var serverOpen by remember { mutableStateOf(true) }
     var localOpen by remember { mutableStateOf(true) }
 
     Column(
@@ -69,6 +70,27 @@ fun WorkflowsUi(onSelect: (WorkflowFile) -> Unit, uiState: ImageGenerationUiStat
             }
             Spacer(modifier = Modifier.size(4.dp))
 
+        }
+
+        ExpandableSection(
+            expanded = serverOpen,
+            title = "Server Workflows",
+            onExpand = { serverOpen = !serverOpen }
+        ) {
+            if (uiState.serverWorkflows.isEmpty()) {
+                Text(
+                    text = "No workflows saved on the server yet. Save one in the ComfyUI web UI and it appears here.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                LazyColumn {
+                    items(uiState.serverWorkflows) {
+                        WorkflowRow(it, uiState.workflow == it, onSelect)
+                        Spacer(modifier = Modifier.size(4.dp))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.size(4.dp))
         }
 
         ExpandableSection(
