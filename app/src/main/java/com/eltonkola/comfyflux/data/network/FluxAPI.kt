@@ -132,6 +132,18 @@ fun decodeFailureReason(body: String, endpoint: String, status: Int): String =
         "$endpoint returned invalid JSON after ${body.length} chars (HTTP $status): ${body.take(120)}"
     }
 
+/**
+ * Userdata file route for a workflow name. The listing strips the ".json"
+ * suffix; aiohttp only serves the exact filename, so put it back.
+ * %2F keeps the whole "workflows/<file>" as the route's single {dir+file}
+ * segment, and ktor's UrlBuilder leaves the escaped slash alone.
+ */
+fun workflowContentPath(name: String): String {
+    val safe = name.substringAfterLast('/')
+    val file = if (safe.endsWith(".json")) safe else "$safe.json"
+    return "userdata/workflows%2F" + java.net.URLEncoder.encode(file, "UTF-8").replace("+", "%20")
+}
+
 /** Non-2xx answer from the ComfyUI server, carrying the server's own error body. */
 class ComfyServerException(
     val status: Int,
@@ -256,9 +268,7 @@ class FluxAPI(private val logStore: LogStore) {
     }
 
     suspend fun fetchWorkflowContent(name: String): String = traced("/userdata/workflows/$name") {
-        // aiohttp matches the raw path: %2F keeps the file route's single segment.
-        val encoded = java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")
-        val response = client.get("$serverAddress/userdata/workflows%2F$encoded")
+        val response = client.get("$serverAddress/${workflowContentPath(name)}")
         val body = response.bodyAsText()
         logStore.debug("client", "/userdata/workflows/$name HTTP ${response.status.value}, ${body.length} chars")
         if (body.isBlank()) {
