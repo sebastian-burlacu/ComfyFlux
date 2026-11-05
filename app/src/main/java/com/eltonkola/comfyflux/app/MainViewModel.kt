@@ -107,6 +107,10 @@ class MainViewModel(
         }
     }
 
+    fun incrementSeed() {
+        mainUseCase.incrementSeed()
+    }
+
     fun interruptImages() {
         viewModelScope.launch {
             fluxAPI.interrupt()

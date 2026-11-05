@@ -5,7 +5,9 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.eltonkola.comfyflux.data.AppSettings
+import com.eltonkola.comfyflux.data.AppState
 import com.eltonkola.comfyflux.data.LogStore
+import com.eltonkola.comfyflux.data.Notifier
 import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.PromptRequest
@@ -40,7 +42,9 @@ class MainUseCase(
     private val groqAPI: GroqAPI,
     private val appSettings: AppSettings,
     private val logStore: LogStore,
-    private val applicationContext: Application
+    private val applicationContext: Application,
+    private val notifier: Notifier,
+    private val appState: AppState
 ) {
 
     private val _uiState = MutableStateFlow(
@@ -78,6 +82,11 @@ class MainUseCase(
 
     fun setSeed(seed: Long, isRandom: Boolean) {
         _uiState.update { it.copy(seed = seed, isRandom = isRandom) }
+    }
+
+    /** A1111-style reroll: keep everything, bump the seed by one, go deterministic. */
+    fun incrementSeed() {
+        _uiState.update { it.copy(seed = it.seed + 1, isRandom = false) }
     }
 
     suspend fun enrichPrompt() {
@@ -205,6 +214,7 @@ class MainUseCase(
                 fluxAPI.generateImage(prompt)
             }
             checkStatus()
+            notifyGenerationOutcome()
         } catch (e: Exception) {
             reportGenerationFailure(e, "generate (${uiState.value.workflow.name})")
         }
@@ -221,6 +231,7 @@ class MainUseCase(
                 fluxAPI.generateImage(PromptRequest(fluxAPI.clientId, item.prompt))
             }
             checkStatus()
+            notifyGenerationOutcome()
         } catch (e: Exception) {
             reportGenerationFailure(e, "rerun (history ${item.id})")
         }
@@ -238,6 +249,20 @@ class MainUseCase(
         }
     }
 
+    /**
+     * Notify about a finished run. generateImage() returns normally even when
+     * the server reported an execution_error over the websocket, so the
+     * progress state's error field - not the exception flow - decides success.
+     */
+    private fun notifyGenerationOutcome() {
+        val error = fluxAPI.progressUiState.value.error
+        if (error.isNotEmpty()) {
+            notifier.generationFinished(appState.foreground, success = false, detail = error)
+        } else {
+            notifier.generationFinished(appState.foreground, success = true, detail = null)
+        }
+    }
+
     private fun reportGenerationFailure(e: Exception, label: String) {
         val message = when (e) {
             is TimeoutCancellationException ->
@@ -247,6 +272,7 @@ class MainUseCase(
         val source = if (e is ComfyServerException) "server" else "client"
         logStore.error(source, "$label: $message")
         fluxAPI.setGenerationError(message)
+        notifier.generationFinished(appState.foreground, success = false, detail = message)
         e.printStackTrace()
     }
 

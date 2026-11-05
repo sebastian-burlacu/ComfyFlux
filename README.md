@@ -47,6 +47,10 @@ builds).
 - In-app logs (Settings -> Logs): server-reported failures like failed
   executions and rejected prompts, plus client-side connection, timeout
   and conversion errors; filterable to errors, clearable
+- Notifications when a generation finishes or fails while the app is in
+  the background; failed generations get a "Retry with same settings"
+  button on the Create screen; "Seed +1" reroll for iterating on a
+  result without reshuffling everything else
 - No account required. The app talks to your own server; the only optional
   remote call is Groq-powered prompt enrichment, off until you add a key
 

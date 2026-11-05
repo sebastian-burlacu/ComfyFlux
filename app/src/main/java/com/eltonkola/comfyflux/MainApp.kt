@@ -10,18 +10,23 @@ import com.eltonkola.comfyflux.app.usecase.PromptSearchUseCase
 import com.eltonkola.comfyflux.app.usecase.QueueUseCase
 import com.eltonkola.comfyflux.app.usecase.TimerUseCase
 import com.eltonkola.comfyflux.data.AppSettings
+import com.eltonkola.comfyflux.data.AppState
 import com.eltonkola.comfyflux.data.LogStore
+import com.eltonkola.comfyflux.data.Notifier
 import com.eltonkola.comfyflux.data.PromptRepo
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
+import androidx.lifecycle.ProcessLifecycleOwner
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.androidx.viewmodel.dsl.viewModelOf
 import org.koin.core.context.startKoin
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 
-class MainApp : Application() {
+class MainApp : Application(), KoinComponent {
     override fun onCreate() {
         super.onCreate()
 
@@ -33,6 +38,11 @@ class MainApp : Application() {
             // Load modules
             modules(appModule)
         }
+
+        // Track foreground/background so finished generations can notify when the
+        // app is not in front.
+        val appState: AppState = get()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appState)
     }
 }
 
@@ -40,6 +50,8 @@ class MainApp : Application() {
 private val appModule = module {
 
     single { LogStore() }
+    singleOf(::AppState)
+    singleOf(::Notifier)
     singleOf(::GroqAPI)
     singleOf(::PromptRepo)
     singleOf(::FluxAPI)

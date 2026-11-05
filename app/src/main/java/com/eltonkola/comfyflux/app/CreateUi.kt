@@ -31,6 +31,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -222,11 +223,18 @@ fun CreateUi(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (progressUiState.error.isNotEmpty()) {
-                Text(
-                    text = "Error: ${progressUiState.error}",
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
+                Column(modifier = Modifier.padding(horizontal = 8.dp)) {
+                    Text(
+                        text = "Error: ${progressUiState.error}",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    TextButton(
+                        onClick = { viewModel.generateImages() },
+                        enabled = !progressUiState.executing
+                    ) {
+                        Text(text = "Retry with same settings")
+                    }
+                }
             }
 
         }
@@ -543,6 +551,18 @@ fun SeedSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
                 )
             }
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(
+                onClick = { viewModel.incrementSeed() },
+                enabled = !uiState.isRandom
+            ) {
+                Text(text = "Seed +1")
+            }
+        }
     }
 }
 
