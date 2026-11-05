@@ -32,18 +32,29 @@ android {
         applicationId = "com.eltonkola.comfyflux"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
 
     }
 
+    signingConfigs {
+        create("release") {
+            // Throwaway test keystore committed so CI and local builds share one
+            // signature for sideload testing this fork. Replace before any real release.
+            storeFile = rootProject.file("keystore/comfyflux-test.jks")
+            storePassword = "comfyflux"
+            keyAlias = "comfyflux"
+            keyPassword = "comfyflux"
+        }
+    }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
