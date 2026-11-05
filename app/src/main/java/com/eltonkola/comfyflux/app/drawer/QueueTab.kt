@@ -55,6 +55,11 @@ fun QueueTab(viewModel: MainViewModel) {
             TopAppBar(
                 title = { Text("All queue jobs") },
                 actions = {
+                    if (uiState.queue != null && uiState.queue!!.pending.isNotEmpty()) {
+                        TextButton(onClick = { viewModel.clearQueue() }) {
+                            Text(text = "Clear queue")
+                        }
+                    }
                     IconButton(onClick = { viewModel.loadQueue() }) {
                         Icon(
                             imageVector = Ikona.Refresh,

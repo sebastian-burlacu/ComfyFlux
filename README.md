@@ -39,8 +39,10 @@ builds).
 - Runs workflows from the phone: size, batch, prompt and seed are patched into
   the workflow before queueing
 - Saved server workflows from the ComfyUI web UI, fetched and run directly
-- Queue view: running and pending jobs, cancel and clear
-- History view with the generated images, saved locally in the app
+- Queue screen with per-job cancel and a one-tap "Clear queue" that
+  drops all pending jobs while leaving the running one alone
+- History view with the generated images, saved locally in the app;
+  any past generation can be re-run with its exact original settings
 - Prompt database with local search to reuse prompts quickly
 - In-app logs (Settings -> Logs): server-reported failures like failed
   executions and rejected prompts, plus client-side connection, timeout

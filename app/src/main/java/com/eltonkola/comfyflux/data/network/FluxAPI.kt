@@ -537,6 +537,22 @@ class FluxAPI(private val logStore: LogStore) {
         )
     }
 
+    suspend fun clearQueue() {
+        val clearBody = buildJsonObject {
+            put("clear", JsonPrimitive(true))
+        }.toString()
+
+        return withContext(Dispatchers.IO) {
+            val response = client.post("$serverAddress/queue") {
+                contentType(ContentType.Application.Json)
+                setBody(clearBody)
+            }
+            val responseBody = response.bodyAsText()
+
+            Log.d("FluxAPI", "Received clear queue: $responseBody")
+        }
+    }
+
     suspend fun interrupt() {
         withContext(Dispatchers.IO) {
             val response = client.post("$serverAddress/interrupt")

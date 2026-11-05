@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.LogStore
+import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
@@ -205,17 +206,48 @@ class MainUseCase(
             }
             checkStatus()
         } catch (e: Exception) {
-            val message = when (e) {
-                is TimeoutCancellationException ->
-                    "Generation timed out after ${15} minutes"
-                else -> e.message ?: "generation failed"
-            }
-            val source = if (e is ComfyServerException) "server" else "client"
-            logStore.error(source, "generate (${uiState.value.workflow.name}): $message")
-            fluxAPI.setGenerationError(message)
-            e.printStackTrace()
+            reportGenerationFailure(e, "generate (${uiState.value.workflow.name})")
         }
         stop()
+    }
+
+    /** Re-queue a past generation exactly as it ran (server history keeps the full prompt). */
+    suspend fun rerunImages(item: HistoryItem, start: () -> Unit, stop: () -> Unit) {
+        start()
+        try {
+            fluxAPI.setServerAddress(normalizeServerUrl(uiState.value.server))
+            logStore.info("client", "re-running history prompt ${item.id}")
+            withContext(Dispatchers.IO) {
+                fluxAPI.generateImage(PromptRequest(fluxAPI.clientId, item.prompt))
+            }
+            checkStatus()
+        } catch (e: Exception) {
+            reportGenerationFailure(e, "rerun (history ${item.id})")
+        }
+        stop()
+    }
+
+    /** Removes every pending job; the running generation is left alone (use interrupt for that). */
+    suspend fun clearQueue() {
+        try {
+            val pending = runCatching { fluxAPI.fetchQueue() }.getOrNull()?.pending?.size ?: 0
+            fluxAPI.clearQueue()
+            logStore.info("client", "cleared $pending pending queue jobs")
+        } catch (e: Exception) {
+            logStore.error("client", "clearing queue failed: ${e.message}")
+        }
+    }
+
+    private fun reportGenerationFailure(e: Exception, label: String) {
+        val message = when (e) {
+            is TimeoutCancellationException ->
+                "Generation timed out after ${15} minutes"
+            else -> e.message ?: "generation failed"
+        }
+        val source = if (e is ComfyServerException) "server" else "client"
+        logStore.error(source, "$label: $message")
+        fluxAPI.setGenerationError(message)
+        e.printStackTrace()
     }
 
 

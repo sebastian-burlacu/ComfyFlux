@@ -8,6 +8,7 @@ import androidx.paging.cachedIn
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.PromptRepo
 import com.eltonkola.comfyflux.data.SettingsState
+import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.HistoryUiState
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.ImageViewerUiState
@@ -165,6 +166,31 @@ class MainViewModel(
         viewModelScope.launch {
             fluxAPI.cancelWorkflow(item.id)
             loadQueue(showLoading = false)
+        }
+    }
+
+    fun clearQueue() {
+        viewModelScope.launch {
+            mainUseCase.clearQueue()
+            loadQueue(showLoading = false)
+        }
+    }
+
+    fun rerunFromHistory(item: HistoryItem) {
+        viewModelScope.launch {
+            mainUseCase.rerunImages(
+                item,
+                start = {
+                    viewModelScope.launch {
+                        timerUseCase.resetTimer()
+                        timerUseCase.startTimer()
+                    }
+                },
+                stop = {
+                    timerUseCase.stopTimer()
+                }
+            )
+            loadHistory(silentUpdate = true)
         }
     }
 

@@ -122,6 +122,9 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
                             },
                                 onDelete = {
                                     viewModel.deleteHistory(row.id)
+                                },
+                                onRerun = {
+                                    viewModel.rerunFromHistory(row)
                                 }
                             )
                             Spacer(modifier = Modifier.size(1.dp))
@@ -136,7 +139,7 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
 
 @SuppressLint("SuspiciousIndentation")
 @Composable
-fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDelete: () -> Unit) {
+fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDelete: () -> Unit, onRerun: () -> Unit) {
     val clipboardManager = LocalClipboardManager.current
     Column {
         Text(text = "Nr: ${item.images.size} success: ${item.success} - completed: ${item.completed}")
@@ -183,6 +186,16 @@ fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDe
                     )
                     Column {
 
+
+                        IconButton(onClick = {
+                            onRerun()
+                        }) {
+                            Icon(
+                                imageVector = Ikona.Refresh,
+                                contentDescription = "rerun",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
 
                         IconButton(onClick = {
                             clipboardManager.setText(AnnotatedString(item.prompt.getPrompt()))
