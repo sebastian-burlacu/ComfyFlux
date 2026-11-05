@@ -42,6 +42,9 @@ builds).
 - Queue view: running and pending jobs, cancel and clear
 - History view with the generated images, saved locally in the app
 - Prompt database with local search to reuse prompts quickly
+- In-app logs (Settings -> Logs): server-reported failures like failed
+  executions and rejected prompts, plus client-side connection, timeout
+  and conversion errors; filterable to errors, clearable
 - No account required. The app talks to your own server; the only optional
   remote call is Groq-powered prompt enrichment, off until you add a key
 

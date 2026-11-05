@@ -10,6 +10,7 @@ import com.eltonkola.comfyflux.app.usecase.PromptSearchUseCase
 import com.eltonkola.comfyflux.app.usecase.QueueUseCase
 import com.eltonkola.comfyflux.app.usecase.TimerUseCase
 import com.eltonkola.comfyflux.data.AppSettings
+import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.PromptRepo
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
@@ -38,6 +39,7 @@ class MainApp : Application() {
 
 private val appModule = module {
 
+    single { LogStore() }
     singleOf(::GroqAPI)
     singleOf(::PromptRepo)
     singleOf(::FluxAPI)

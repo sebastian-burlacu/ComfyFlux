@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.eltonkola.comfyflux.data.AppSettings
+import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
@@ -14,6 +15,7 @@ import com.eltonkola.comfyflux.data.model.updatePrompt
 import com.eltonkola.comfyflux.data.model.updateSeed
 import com.eltonkola.comfyflux.data.model.updateSizeAndBatch
 import com.eltonkola.comfyflux.data.network.ComfyJson
+import com.eltonkola.comfyflux.data.network.ComfyServerException
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
 import com.eltonkola.comfyflux.data.network.normalizeServerUrl
@@ -36,6 +38,7 @@ class MainUseCase(
     private val fluxAPI: FluxAPI,
     private val groqAPI: GroqAPI,
     private val appSettings: AppSettings,
+    private val logStore: LogStore,
     private val applicationContext: Application
 ) {
 
@@ -92,6 +95,7 @@ class MainUseCase(
             val richPrompt = groqAPI.enrichPrompt(uiState.value.prompt)
             _uiState.update { it.copy(prompt = richPrompt, enrichingPrompt = false) }
         } catch (e: Exception) {
+            logStore.error("client", "prompt enrichment failed: ${e.message}")
             _uiState.update {
                 it.copy(enrichingPrompt = false, promptEnrichError = "Prompt enrichment failed: ${e.message ?: "unknown error"}")
             }
@@ -111,25 +115,31 @@ class MainUseCase(
                 // Only remember URLs that actually answer.
                 appSettings.setServerUrl(url)
                 _uiState.update { it.copy(loadingStats = false, stats = stats, serverError = null) }
+                logStore.info("server", "connected to $url (${stats.system.os}, python ${stats.system.python_version})")
                 refreshServerWorkflows()
             }
             .onFailure { e ->
+                val friendly = friendlyConnectionError(e)
+                logStore.error("client", "connection to $url failed: $friendly [${e.javaClass.simpleName}: ${e.message}]")
                 _uiState.update {
-                    it.copy(loadingStats = false, stats = null, serverError = friendlyConnectionError(e))
+                    it.copy(loadingStats = false, stats = null, serverError = friendly)
                 }
             }
     }
 
     /** Workflows saved in the ComfyUI web UI; a listing failure must not break the connection status. */
     private suspend fun refreshServerWorkflows() {
-        val names = runCatching { fluxAPI.fetchWorkflowNames() }.getOrDefault(emptyList())
-        _uiState.update { state ->
-            state.copy(
-                serverWorkflows = names.map {
-                    WorkflowFile(it, "Saved from the ComfyUI web UI", "server://$it", isAsset = false, isServer = true)
+        runCatching { fluxAPI.fetchWorkflowNames() }
+            .onFailure { e -> logStore.warn("server", "workflow listing failed: ${e.message}") }
+            .onSuccess { names ->
+                _uiState.update { state ->
+                    state.copy(
+                        serverWorkflows = names.map {
+                            WorkflowFile(it, "Saved from the ComfyUI web UI", "server://$it", isAsset = false, isServer = true)
+                        }
+                    )
                 }
-            )
-        }
+            }
     }
 
     private fun friendlyConnectionError(e: Throwable): String = when (e) {
@@ -195,6 +205,14 @@ class MainUseCase(
             }
             checkStatus()
         } catch (e: Exception) {
+            val message = when (e) {
+                is TimeoutCancellationException ->
+                    "Generation timed out after ${15} minutes"
+                else -> e.message ?: "generation failed"
+            }
+            val source = if (e is ComfyServerException) "server" else "client"
+            logStore.error(source, "generate (${uiState.value.workflow.name}): $message")
+            fluxAPI.setGenerationError(message)
             e.printStackTrace()
         }
         stop()

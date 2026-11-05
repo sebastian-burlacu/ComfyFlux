@@ -39,11 +39,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.eltonkola.comfyflux.R
+import com.eltonkola.comfyflux.app.AppScreens
 import com.eltonkola.comfyflux.app.MainViewModel
+import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Back
 import com.eltonkola.comfyflux.ui.theme.ikona.Key
 import com.eltonkola.comfyflux.ui.theme.ikona.Paste
+import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -172,6 +175,14 @@ fun SettingsScreen(
                 }
             )
 
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            val logStore: LogStore = koinInject()
+            val logCount by logStore.entries.collectAsState(initial = emptyList())
+            TextButton(onClick = { navController.navigate(AppScreens.Logs.screenName) }) {
+                Text(text = if (logCount.isEmpty()) "View logs" else "View logs (${logCount.size})")
+            }
 
             Spacer(
                 modifier = Modifier

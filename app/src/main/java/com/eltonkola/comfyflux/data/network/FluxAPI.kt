@@ -2,6 +2,7 @@ package com.eltonkola.comfyflux.data.network
 
 import android.net.Uri
 import android.util.Log
+import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ProgressGenerationUIState
 import com.eltonkola.comfyflux.data.model.PromptRequest
@@ -11,7 +12,9 @@ import com.eltonkola.comfyflux.data.model.WSMessage
 import com.eltonkola.comfyflux.data.model.Workflow
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpCallValidator
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
@@ -115,6 +118,17 @@ fun extractAddressAndPort(url: String): Pair<String, Int> {
     return Pair(address, port)
 }
 
+/** Non-2xx answer from the ComfyUI server, carrying the server's own error body. */
+class ComfyServerException(
+    val status: Int,
+    val path: String,
+    val body: String,
+    cause: Throwable? = null,
+) : Exception(
+    "HTTP $status from $path: ${body.take(500).ifEmpty { "no response body" }}",
+    cause,
+)
+
 /*
 Api docs:
 Rest:
@@ -124,7 +138,7 @@ WS:
 https://github.com/comfyanonymous/ComfyUI/issues/2258
 */
 
-class FluxAPI {
+class FluxAPI(private val logStore: LogStore) {
 
     companion object {
         // Hard stop for a single generation; covers slow model loads.
@@ -142,6 +156,22 @@ class FluxAPI {
         install(HttpTimeout) {
             connectTimeoutMillis = 10_000
             requestTimeoutMillis = 60_000
+        }
+        install(HttpCallValidator) {
+            // Surface the server's own error text (/prompt node_errors, 404
+            // bodies, ...) instead of ktor's bare status line.
+            handleResponseExceptionWithRequest { cause, request ->
+                if (cause is ResponseException) {
+                    val response = cause.response
+                    val body = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
+                    throw ComfyServerException(
+                        status = response.status.value,
+                        path = request.url.encodedPath,
+                        body = body,
+                        cause = cause,
+                    )
+                }
+            }
         }
     }
 
@@ -312,25 +342,40 @@ class FluxAPI {
                 }
             }
         } catch (e: Exception) {
+            val message = when (e) {
+                is TimeoutCancellationException ->
+                    "Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes"
+                else -> e.message ?: "Connection to the server was lost"
+            }
+            logStore.error("client", "generation websocket: $message")
             _progressUiState.update {
                 it.copy(
                     executing = false,
-                    error = when (e) {
-                        is TimeoutCancellationException ->
-                            "Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes"
-                        else -> e.message ?: "Connection to the server was lost"
-                    }
+                    error = message,
                 )
             }
             throw e
         }
     }
 
+    /** Report an app-side failure that aborted a generation (queue/conversion errors). */
+    fun setGenerationError(message: String) {
+        _progressUiState.update { it.copy(executing = false, error = message) }
+    }
+
     // Applies one websocket event to the progress state; returns true when the
     // event terminates the execution of our prompt.
     private fun handleWsMessage(message: WSMessage): Boolean {
         when (message) {
-            is WSMessage.PromptMessage -> _progressUiState.value = handlePromptMessage(message)
+            is WSMessage.PromptMessage -> {
+                _progressUiState.value = handlePromptMessage(message)
+                if (message.nodeErrors.isNotEmpty()) {
+                    logStore.error(
+                        "server",
+                        "prompt rejected: " + message.nodeErrors.entries.joinToString("; ") { "${it.key}: ${it.value}" }
+                    )
+                }
+            }
             is WSMessage.StatusMessage -> _progressUiState.value = handleStatusMessage(message)
             is WSMessage.ExecutionStartMessage -> _progressUiState.update {
                 it.copy(statusMessage = "Execution started")
@@ -342,22 +387,32 @@ class FluxAPI {
             is WSMessage.ExecutedMessage -> _progressUiState.value = handleExecutedMessage(message)
             is WSMessage.ExecutionSuccessMessage -> _progressUiState.value =
                 handleExecutionSuccessMessage(message)
-            is WSMessage.ExecutionErrorMessage -> _progressUiState.update {
-                it.copy(
-                    executing = false,
-                    statusMessage = "Execution failed",
-                    error = buildString {
-                        append(message.exceptionType ?: "ExecutionError")
-                        append(": ")
-                        append(message.exceptionMessage ?: "unknown error")
-                        message.nodeType?.let { type -> append(" (node: $type)") }
-                    }
-                )
+            is WSMessage.ExecutionErrorMessage -> {
+                val error = buildString {
+                    append(message.exceptionType ?: "ExecutionError")
+                    append(": ")
+                    append(message.exceptionMessage ?: "unknown error")
+                    message.nodeType?.let { type -> append(" (node: $type)") }
+                }
+                logStore.error("server", "execution failed: $error")
+                _progressUiState.update {
+                    it.copy(
+                        executing = false,
+                        statusMessage = "Execution failed",
+                        error = error,
+                    )
+                }
             }
-            is WSMessage.ExecutionInterruptedMessage -> _progressUiState.update {
-                it.copy(executing = false, statusMessage = "Execution interrupted")
+            is WSMessage.ExecutionInterruptedMessage -> {
+                logStore.warn("server", "execution interrupted")
+                _progressUiState.update {
+                    it.copy(executing = false, statusMessage = "Execution interrupted")
+                }
             }
-            is WSMessage.Unknown -> Log.w("FluxAPI", "Ignoring unknown ws message: ${message.type}")
+            is WSMessage.Unknown -> {
+                logStore.info("server", "unhandled server event: ${message.type}")
+                Log.w("FluxAPI", "Ignoring unknown ws message: ${message.type}")
+            }
         }
         return message is WSMessage.ExecutionSuccessMessage ||
                 message is WSMessage.ExecutionErrorMessage ||
