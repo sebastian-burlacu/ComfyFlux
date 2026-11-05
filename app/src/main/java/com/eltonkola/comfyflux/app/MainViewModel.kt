@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.PromptRepo
 import com.eltonkola.comfyflux.data.SettingsState
@@ -21,6 +22,7 @@ import com.eltonkola.comfyflux.app.usecase.MainUseCase
 import com.eltonkola.comfyflux.app.usecase.PromptSearchUseCase
 import com.eltonkola.comfyflux.app.usecase.QueueUseCase
 import com.eltonkola.comfyflux.app.usecase.TimerUseCase
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -38,7 +40,9 @@ class MainViewModel(
     private val timerUseCase: TimerUseCase
 ) : AndroidViewModel(applicationContext) {
 
-    val promptSearchPaging: StateFlow<PagingData<String>> = promptSearchUseCase.promptSearchPaging
+    val promptSearchPaging: StateFlow<PagingData<String>> = promptSearchUseCase.results
+        .cachedIn(viewModelScope)
+        .stateIn(viewModelScope, SharingStarted.Lazily, PagingData.empty())
     val historyUiState: StateFlow<HistoryUiState> = historyUseCase.historyUiState
     val progressUiState: StateFlow<ProgressGenerationUIState> = fluxAPI.progressUiState
     val imageUiState: StateFlow<ImageViewerUiState> = imageViewerUseCase.imageUiState
@@ -49,13 +53,10 @@ class MainViewModel(
 
     init {
         checkStatus()
-        searchLines("")
     }
 
     fun searchLines(query: String) {
-        viewModelScope.launch {
-            promptSearchUseCase.searchLines(query, viewModelScope)
-        }
+        promptSearchUseCase.search(query)
     }
 
     fun updateSeverUrl(url: String) {

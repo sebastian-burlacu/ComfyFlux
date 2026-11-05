@@ -124,12 +124,12 @@ class MainUseCase(
 
 
     private fun String.cleanPrompt(): String {
+        // Whitespace only: kotlinx-serialization escapes quotes/backslashes
+        // itself, hand-escaping here would double-escape the text.
         return this
-            .replace("\\", "\\\\") // Escape backslashes
-            .replace("\"", "\\\"") // Escape double quotes
-            .replace("\n", "") // Remove newlines
-            .replace("\r", "") // Remove carriage returns
-            .replace("\t", "") // Remove tabs
+            .replace("\n", " ")
+            .replace("\r", " ")
+            .replace("\t", " ")
     }
 }
 
