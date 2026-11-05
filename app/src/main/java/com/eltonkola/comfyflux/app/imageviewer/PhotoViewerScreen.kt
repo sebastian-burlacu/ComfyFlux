@@ -45,6 +45,7 @@ import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -74,38 +75,34 @@ fun PhotoViewerScreen(
                     Text(text = "Gallery")
                 },
                 actions = {
-                    IconButton(onClick = {
-                        coroutineScope.launch {
-                            saveImageToDownloads(
-                                context,
-                                currentImageUrl,
-                                "flux_image_${System.currentTimeMillis()}.png",
-                                true
-                            )
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Ikona.Share,
-                            contentDescription = "Share",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(onClick = {
-                        coroutineScope.launch {
-                            saveImageToDownloads(
-                                context,
-                                currentImageUrl,
-                                "flux_image_${System.currentTimeMillis()}.png",
-                                false
-                            )
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Ikona.Download,
-                            contentDescription = "Save",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    HelpIconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                saveImageToDownloads(
+                                    context,
+                                    currentImageUrl,
+                                    "flux_image_${System.currentTimeMillis()}.png",
+                                    true
+                                )
+                            }
+                        },
+                        imageVector = Ikona.Share,
+                        help = "Share this image"
+                    )
+                    HelpIconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                saveImageToDownloads(
+                                    context,
+                                    currentImageUrl,
+                                    "flux_image_${System.currentTimeMillis()}.png",
+                                    false
+                                )
+                            }
+                        },
+                        imageVector = Ikona.Download,
+                        help = "Save this image to Downloads"
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {

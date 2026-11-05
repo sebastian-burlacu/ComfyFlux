@@ -31,6 +31,7 @@ import com.eltonkola.comfyflux.app.MainViewModel
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Clean
 import com.eltonkola.comfyflux.ui.theme.ikona.Search
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @Composable
 fun PromptSearch(viewModel: MainViewModel, onPromptSelected: (String) -> Unit) {
@@ -74,18 +75,14 @@ fun PromptSearch(viewModel: MainViewModel, onPromptSelected: (String) -> Unit) {
                 )
             },
             trailingIcon = {
-                IconButton(
+                HelpIconButton(
                     onClick = {
                         searchQuery = TextFieldValue("")
                         viewModel.searchLines("")
-                    }
-                ) {
-                    Icon(
-                        imageVector = Ikona.Clean,
-                        contentDescription = "Clear",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                    },
+                    imageVector = Ikona.Clean,
+                    help = "Clear the search box"
+                )
             }
         )
 

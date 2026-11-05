@@ -37,6 +37,7 @@ import com.eltonkola.comfyflux.ui.theme.ikona.Cancel
 import com.eltonkola.comfyflux.ui.theme.ikona.Error
 import com.eltonkola.comfyflux.ui.theme.ikona.Refresh
 import com.eltonkola.comfyflux.ui.theme.ikona.Stop
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,13 +61,11 @@ fun QueueTab(viewModel: MainViewModel) {
                             Text(text = "Clear queue")
                         }
                     }
-                    IconButton(onClick = { viewModel.loadQueue() }) {
-                        Icon(
-                            imageVector = Ikona.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    HelpIconButton(
+                        onClick = { viewModel.loadQueue() },
+                        imageVector = Ikona.Refresh,
+                        help = "Reload the queue and running jobs"
+                    )
                 }
             )
         }
@@ -185,14 +184,10 @@ fun QueueRowUi(item: Queue.Item, isRunning: Boolean, onCancel: (Queue.Item) -> U
             Spacer(modifier = Modifier.size(4.dp))
             Text(text = item.prompt, fontSize = 16.sp)
         }
-        IconButton(onClick = {
-            onCancel(item)
-        }) {
-            Icon(
-                imageVector = if (isRunning) Ikona.Stop else Ikona.Cancel,
-                contentDescription = "cancel",
-                modifier = Modifier.size(24.dp)
-            )
-        }
+        HelpIconButton(
+            onClick = { onCancel(item) },
+            imageVector = if (isRunning) Ikona.Stop else Ikona.Cancel,
+            help = if (isRunning) "Interrupt this running generation" else "Remove this queued job"
+        )
     }
 }

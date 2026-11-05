@@ -47,6 +47,7 @@ import com.eltonkola.comfyflux.ui.theme.ikona.Search
 import com.eltonkola.comfyflux.ui.theme.ikona.Settings
 import com.eltonkola.comfyflux.ui.theme.ikona.Stop
 import kotlinx.coroutines.launch
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,48 +73,42 @@ fun MainAppScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = {
-                        scope.launch {
-                            drawerStateLeft.apply {
-                                if (isClosed) open() else close()
+                    HelpIconButton(
+                        onClick = {
+                            scope.launch {
+                                drawerStateLeft.apply {
+                                    if (isClosed) open() else close()
+                                }
                             }
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Ikona.Menu,
-                            contentDescription = "workflows",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                        },
+                        imageVector = Ikona.Menu,
+                        help = "Open the workflows drawer"
+                    )
                 },
                 title = {
                     Text(text = "ComfyFlux")
                 },
                 actions = {
 
-                    IconButton(onClick = {
-                        navController.navigate(AppScreens.Settings.screenName)
-                    }) {
-                        Icon(
-                            imageVector = Ikona.Settings,
-                            contentDescription = "settings",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    HelpIconButton(
+                        onClick = {
+                            navController.navigate(AppScreens.Settings.screenName)
+                        },
+                        imageVector = Ikona.Settings,
+                        help = "Open settings"
+                    )
 
-                    IconButton(onClick = {
-                        scope.launch {
-                            drawerStateRight.apply {
-                                if (isClosed) open() else close()
+                    HelpIconButton(
+                        onClick = {
+                            scope.launch {
+                                drawerStateRight.apply {
+                                    if (isClosed) open() else close()
+                                }
                             }
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Ikona.Search,
-                            contentDescription = "prompts",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                        },
+                        imageVector = Ikona.Search,
+                        help = "Open the prompt library"
+                    )
 
                 }
             )

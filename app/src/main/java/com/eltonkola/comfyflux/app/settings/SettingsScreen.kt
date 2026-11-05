@@ -47,6 +47,7 @@ import com.eltonkola.comfyflux.ui.theme.ikona.Back
 import com.eltonkola.comfyflux.ui.theme.ikona.Key
 import com.eltonkola.comfyflux.ui.theme.ikona.Paste
 import org.koin.compose.koinInject
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,17 +171,15 @@ fun SettingsScreen(
                 textStyle = TextStyle(fontSize = 10.sp),
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = {
-                    IconButton({
-                        clipboardManager.getText()?.let {
-                            viewModel.setGrqApiKey(it.text)
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Ikona.Paste,
-                            contentDescription = "Paste",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    HelpIconButton(
+                        onClick = {
+                            clipboardManager.getText()?.let {
+                                viewModel.setGrqApiKey(it.text)
+                            }
+                        },
+                        imageVector = Ikona.Paste,
+                        help = "Paste the API key from the clipboard"
+                    )
                 },
                 leadingIcon = {
                     Icon(

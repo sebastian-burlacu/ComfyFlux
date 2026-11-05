@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -30,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -46,9 +48,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.eltonkola.comfyflux.R
+import com.eltonkola.comfyflux.components.HelpIconButton
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.ProgressGenerationUIState
 import com.eltonkola.comfyflux.ui.theme.Ikona
@@ -206,7 +211,7 @@ fun CreateUi(
 
             var tabIndex by remember { mutableIntStateOf(0) }
 
-            val tabs = listOf("Prompt", "Size", "More")
+            val tabs = listOf("Prompt", "Size / Batch", "Advanced")
 
             Column(modifier = Modifier.fillMaxWidth()) {
                 TabRow(selectedTabIndex = tabIndex) {
@@ -220,7 +225,7 @@ fun CreateUi(
                 when (tabIndex) {
                     0 -> PromptTab(uiState, progressUiState, viewModel)
                     1 -> SizeTab(uiState, viewModel)
-                    2 -> MoreTab(uiState, viewModel)
+                    2 -> AdvancedTab(uiState, viewModel)
                 }
             }
 
@@ -265,8 +270,8 @@ fun PromptTab(
             placeholder = { Text("Enter your prompt") },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(180.dp), // Adjust height as needed
-            minLines = 6,
+                .height(150.dp),
+            minLines = 4,
             singleLine = false,
             keyboardOptions = KeyboardOptions.Default.copy(
                 imeAction = ImeAction.Done
@@ -303,52 +308,36 @@ fun PromptTab(
 
                     val clipboard = LocalClipboardManager.current
 
-                    IconButton(
+                    HelpIconButton(
                         onClick = {
                             viewModel.enrichPrompt()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Ikona.Magic,
-                            contentDescription = "Enrich prompt with AI",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(
+                        },
+                        imageVector = Ikona.Magic,
+                        help = "Rewrite the prompt into a richer one using AI (needs a Groq API key in Settings)"
+                    )
+                    HelpIconButton(
                         onClick = {
                             clipboard.getText()?.let {
                                 viewModel.updatePrompt(uiState.prompt + it)
                             }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Ikona.Paste,
-                            contentDescription = "paste",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(
+                        },
+                        imageVector = Ikona.Paste,
+                        help = "Append the clipboard contents to the prompt"
+                    )
+                    HelpIconButton(
                         onClick = {
                             viewModel.randomPrompt()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Ikona.Random,
-                            contentDescription = "Random",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(
+                        },
+                        imageVector = Ikona.Random,
+                        help = "Fill the prompt with a random entry from the offline prompt library"
+                    )
+                    HelpIconButton(
                         onClick = {
                             viewModel.updatePrompt("")
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Ikona.Clean,
-                            contentDescription = "Clear",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                        },
+                        imageVector = Ikona.Clean,
+                        help = "Clear the prompt box"
+                    )
                 }
             }
         )
@@ -407,28 +396,22 @@ fun SizeTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
             .verticalScroll(rememberScrollState())
     ) {
         ImageSizeSelector(uiState = uiState, viewModel = viewModel)
-
+        Spacer(modifier = Modifier.height(8.dp))
+        ImageBatchSelector(uiState = uiState, viewModel = viewModel)
     }
 }
 
 
 @Composable
-fun MoreTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
+fun AdvancedTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
-
-        ImageBatchSelector(uiState = uiState, viewModel = viewModel)
-        Spacer(modifier = Modifier.height(16.dp))
-
         SeedSelector(uiState = uiState, viewModel = viewModel)
-        Spacer(modifier = Modifier.height(16.dp))
-
+        Spacer(modifier = Modifier.height(8.dp))
         SamplerSettingsSelector(uiState = uiState, viewModel = viewModel)
-        Spacer(modifier = Modifier.size(200.dp))
     }
 }
 
@@ -442,7 +425,7 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
     var heightIndex by remember { mutableIntStateOf(imageSizes.indexOf(uiState.height)) }
 
     Row(
-        modifier = Modifier.padding(16.dp),
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
 
@@ -451,7 +434,7 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 .weight(1f)
                 .padding(end = 6.dp)
         ) {
-            Text(text = "Width: ${imageSizes[widthIndex]}Px")
+            Text(text = "Width: ${imageSizes[widthIndex]}Px", fontSize = 13.sp)
             Slider(
                 value = widthIndex.toFloat(),
                 valueRange = sliderValues.first()..sliderValues.last(),
@@ -462,7 +445,7 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 steps = sliderValues.size
             )
 
-            Text(text = "Height: ${imageSizes[heightIndex]}Px")
+            Text(text = "Height: ${imageSizes[heightIndex]}Px", fontSize = 13.sp)
             Slider(
                 value = heightIndex.toFloat(),
                 valueRange = sliderValues.first()..sliderValues.last(),
@@ -473,7 +456,7 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 steps = sliderValues.size
             )
         }
-        Box(modifier = Modifier.size(120.dp, 120.dp)) {
+        Box(modifier = Modifier.size(96.dp)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize(1f)
@@ -484,7 +467,8 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "${imageSizes[widthIndex]}x${imageSizes[heightIndex]}Px",
+                    text = "${imageSizes[widthIndex]}x${imageSizes[heightIndex]}",
+                    fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }
@@ -496,27 +480,53 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
 
 @Composable
 fun ImageBatchSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
-    var imageBatch by remember { mutableIntStateOf(uiState.batchSize) }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(6.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
         Text(
-            text = "Image Batch",
-            style = MaterialTheme.typography.headlineSmall
+            text = "Batch size",
+            style = MaterialTheme.typography.titleMedium
         )
-        Text(text = "How many images do you want to generate: $imageBatch")
-        Slider(
-            value = imageBatch.toFloat(),
-            valueRange = 1F..32F,
-            onValueChange = {
-                imageBatch = it.toInt()
-                viewModel.setBatchSize(imageBatch)
-            },
-            steps = 32
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = uiState.batchSize.toString(),
+                onValueChange = { text ->
+                    if (text.all { char -> char.isDigit() }) {
+                        // typing is clamped live so the field always shows a valid count
+                        (text.toIntOrNull() ?: 1)
+                            .coerceIn(1, 32)
+                            .let(viewModel::setBatchSize)
+                    }
+                },
+                label = { Text("Images per run", fontSize = 13.sp) },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 14.sp, textAlign = TextAlign.Center),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(140.dp)
+            )
+            Column {
+                HelpIconButton(
+                    imageVector = Ikona.ArrowDown,
+                    help = "One more image per run",
+                    onClick = { viewModel.setBatchSize((uiState.batchSize + 1).coerceIn(1, 32)) },
+                    modifier = Modifier.rotate(180f),
+                    size = 32.dp,
+                    iconSize = 18.dp
+                )
+                HelpIconButton(
+                    imageVector = Ikona.ArrowDown,
+                    help = "One fewer image per run",
+                    onClick = { viewModel.setBatchSize((uiState.batchSize - 1).coerceIn(1, 32)) },
+                    size = 32.dp,
+                    iconSize = 18.dp
+                )
+            }
+        }
     }
 }
 
@@ -527,23 +537,26 @@ fun SeedSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(6.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        Text(
-            text = "Seed to use",
-            style = MaterialTheme.typography.headlineSmall
-        )
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-
-            Text(text = "Use random seed")
             Checkbox(
                 checked = uiState.isRandom,
                 onCheckedChange = {
                     viewModel.setSeed(uiState.seed, it)
                 }
             )
+            Text(text = "Use random seed", fontSize = 14.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = { viewModel.incrementSeed() },
+                enabled = !uiState.isRandom
+            ) {
+                Text(text = "Seed +1", fontSize = 14.sp)
+            }
         }
 
         TextField(
@@ -559,20 +572,19 @@ fun SeedSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
                     }
                 }
             },
-            label = { Text("Seed value") },
+            label = { Text("Seed value", fontSize = 13.sp) },
+            singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             trailingIcon = {
-                IconButton(onClick = {
-                    if (!uiState.isRandom) {
-                        viewModel.randomSeed()
+                HelpIconButton(
+                    imageVector = Ikona.Refresh,
+                    help = "Roll a new random seed value",
+                    onClick = {
+                        if (!uiState.isRandom) {
+                            viewModel.randomSeed()
+                        }
                     }
-                }) {
-                    Icon(
-                        imageVector = Ikona.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                )
             },
             leadingIcon = {
                 Icon(
@@ -582,18 +594,6 @@ fun SeedSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
                 )
             }
         )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            TextButton(
-                onClick = { viewModel.incrementSeed() },
-                enabled = !uiState.isRandom
-            ) {
-                Text(text = "Seed +1")
-            }
-        }
     }
 }
 
@@ -607,50 +607,52 @@ fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainView
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(6.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
         Text(
             text = "Sampler settings",
-            style = MaterialTheme.typography.headlineSmall
+            style = MaterialTheme.typography.titleMedium
         )
 
-        TextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = cfgText,
-            onValueChange = {
-                if (it.all { char -> char.isDigit() || char == '.' }) {
-                    cfgText = it
-                    try {
-                        viewModel.setCfg(it.toFloat())
-                    } catch (e: Exception) {
-                        //empty or half-typed cfg, keep the workflow value
-                        viewModel.setCfg(0f)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextField(
+                modifier = Modifier.weight(1f),
+                value = cfgText,
+                onValueChange = {
+                    if (it.all { char -> char.isDigit() || char == '.' }) {
+                        cfgText = it
+                        try {
+                            viewModel.setCfg(it.toFloat())
+                        } catch (e: Exception) {
+                            //empty or half-typed cfg, keep the workflow value
+                            viewModel.setCfg(0f)
+                        }
                     }
-                }
-            },
-            label = { Text("CFG scale (0 keeps workflow value)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-        )
+                },
+                label = { Text("CFG (0 = keep)", fontSize = 13.sp) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        TextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = stepsText,
-            onValueChange = {
-                if (it.all { char -> char.isDigit() }) {
-                    stepsText = it
-                    try {
-                        viewModel.setSteps(it.toInt())
-                    } catch (e: Exception) {
-                        //empty steps, keep the workflow value
-                        viewModel.setSteps(0)
+            TextField(
+                modifier = Modifier.weight(1f),
+                value = stepsText,
+                onValueChange = {
+                    if (it.all { char -> char.isDigit() }) {
+                        stepsText = it
+                        try {
+                            viewModel.setSteps(it.toInt())
+                        } catch (e: Exception) {
+                            //empty steps, keep the workflow value
+                            viewModel.setSteps(0)
+                        }
                     }
-                }
-            },
-            label = { Text("Steps (0 keeps workflow value)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-        )
+                },
+                label = { Text("Steps (0 = keep)", fontSize = 13.sp) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+        }
     }
 }
 

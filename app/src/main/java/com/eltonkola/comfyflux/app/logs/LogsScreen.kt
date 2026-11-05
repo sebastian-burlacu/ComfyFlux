@@ -42,6 +42,7 @@ import com.eltonkola.comfyflux.ui.theme.ikona.Back
 import com.eltonkola.comfyflux.ui.theme.ikona.Clean
 import com.eltonkola.comfyflux.ui.theme.ikona.Download
 import org.koin.compose.koinInject
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,20 +89,16 @@ fun LogsScreen(navController: NavController) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { exportLogs() }) {
-                        Icon(
-                            imageVector = Ikona.Download,
-                            contentDescription = "Export logs",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(onClick = { logStore.clear() }) {
-                        Icon(
-                            imageVector = Ikona.Clean,
-                            contentDescription = "Clear logs",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    HelpIconButton(
+                        onClick = { exportLogs() },
+                        imageVector = Ikona.Download,
+                        help = "Save the log to a text file and share it"
+                    )
+                    HelpIconButton(
+                        onClick = { logStore.clear() },
+                        imageVector = Ikona.Clean,
+                        help = "Empty the log buffer"
+                    )
                 }
             )
         }

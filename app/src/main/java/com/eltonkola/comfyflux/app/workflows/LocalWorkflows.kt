@@ -46,6 +46,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 
 class FolderViewModel(application: Application) : AndroidViewModel(application) {
@@ -187,15 +188,13 @@ fun LocalWorkflows(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                IconButton(onClick = {
-                    folderPicker.launch(null)
-                }) {
-                    Icon(
-                        imageVector = Ikona.OpenFolder,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                HelpIconButton(
+                    onClick = {
+                        folderPicker.launch(null)
+                    },
+                    imageVector = Ikona.OpenFolder,
+                    help = "Choose a folder on the phone to load workflow files from"
+                )
 
             }
 

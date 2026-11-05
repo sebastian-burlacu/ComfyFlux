@@ -28,6 +28,7 @@ import com.eltonkola.comfyflux.data.network.DEFAULT_URL
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Refresh
 import com.eltonkola.comfyflux.ui.theme.ikona.Server
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @Composable
 fun ServerConnectionUi(viewModel: MainViewModel, uiState: ImageGenerationUiState) {
@@ -96,14 +97,13 @@ fun ServerConnectionUi(viewModel: MainViewModel, uiState: ImageGenerationUiState
                             )
                             .background(color = bgColor, shape = CircleShape)
                     ) {
-                        IconButton(onClick = { viewModel.checkStatus() }) {
-                            Icon(
-                                modifier = Modifier.size(16.dp),
-                                imageVector = Ikona.Refresh,
-                                contentDescription = "Connect",
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
+                        HelpIconButton(
+                            onClick = { viewModel.checkStatus() },
+                            imageVector = Ikona.Refresh,
+                            help = "Reconnect and refresh the server status",
+                            iconSize = 16.dp,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
                     }
                 }
             }

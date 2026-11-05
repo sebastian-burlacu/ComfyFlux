@@ -50,6 +50,7 @@ import com.eltonkola.comfyflux.ui.theme.ikona.Delete
 import com.eltonkola.comfyflux.ui.theme.ikona.Error
 import com.eltonkola.comfyflux.ui.theme.ikona.Image
 import com.eltonkola.comfyflux.ui.theme.ikona.Refresh
+import com.eltonkola.comfyflux.components.HelpIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,13 +74,11 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
                             modifier = Modifier.size(24.dp)
                         )
                     }
-                    IconButton(onClick = { viewModel.loadHistory() }) {
-                        Icon(
-                            imageVector = Ikona.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    HelpIconButton(
+                        onClick = { viewModel.loadHistory() },
+                        imageVector = Ikona.Refresh,
+                        help = "Reload the history from the server"
+                    )
                 }
             )
         }
@@ -187,35 +186,25 @@ fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDe
                     Column {
 
 
-                        IconButton(onClick = {
-                            onRerun()
-                        }) {
-                            Icon(
-                                imageVector = Ikona.Refresh,
-                                contentDescription = "rerun",
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        HelpIconButton(
+                            onClick = { onRerun() },
+                            imageVector = Ikona.Refresh,
+                            help = "Generate again with this entry's exact settings"
+                        )
 
-                        IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(item.prompt.getPrompt()))
-                        }) {
-                            Icon(
-                                imageVector = Ikona.Copy,
-                                contentDescription = "copy",
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        HelpIconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(item.prompt.getPrompt()))
+                            },
+                            imageVector = Ikona.Copy,
+                            help = "Copy the prompt to the clipboard"
+                        )
 
-                        IconButton(onClick = {
-                            onDelete()
-                        }) {
-                            Icon(
-                                imageVector = Ikona.Delete,
-                                contentDescription = "delete",
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        HelpIconButton(
+                            onClick = { onDelete() },
+                            imageVector = Ikona.Delete,
+                            help = "Delete this generation from the server history"
+                        )
                     }
                 }
             }
