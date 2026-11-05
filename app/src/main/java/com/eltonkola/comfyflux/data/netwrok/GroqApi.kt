@@ -5,16 +5,18 @@ import com.eltonkola.comfyflux.BuildConfig
 import com.eltonkola.comfyflux.data.AppSettings
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.util.InternalAPI
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -90,16 +92,20 @@ class GroqAPI(private val appSettings: AppSettings) {
                 coerceInputValues = true
             })
         }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            requestTimeoutMillis = 60_000
+        }
     }
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    @OptIn(InternalAPI::class)
     suspend fun enrichPrompt(initialPrompt: String): String {
 
         val apiKey = appSettings.settingsState.value.grqApiKey.ifEmpty { SHARED_API_KEY }
 
-        Log.d("GrowAPI", "enrichPrompt - $apiKey -  initialPrompt: $initialPrompt")
+        // Never log the API key (it used to be written to logcat).
+        Log.d("GrowAPI", "enrichPrompt, prompt length: ${initialPrompt.length}")
         val url = "https://api.groq.com/openai/v1/chat/completions"
 
         val requestBody = RequestBody(
@@ -124,18 +130,20 @@ class GroqAPI(private val appSettings: AppSettings) {
         val response: HttpResponse = client.post(url) {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
             contentType(ContentType.Application.Json)
-            body = jsonBody
+            setBody(jsonBody)
+        }
+
+        if (!response.status.isSuccess()) {
+            // e.g. 401 for a missing/expired key; surfaced by callers.
+            throw Exception("Prompt enrichment failed: ${response.status}")
         }
 
         val responseBody = response.bodyAsText()
-        Log.d("GrowAPI", "Received response: $responseBody")
+        Log.d("GrowAPI", "enrichPrompt status: ${response.status}")
 
         val apiResponse = Json.decodeFromString<ApiResponse>(responseBody)
-        Log.d("GrowAPI", "Parsed apiResponse: $apiResponse")
-
-        return apiResponse.choices.firstOrNull()?.message?.content ?: "Failed to enrich prompt"
-
+        return apiResponse.choices.firstOrNull()?.message?.content
+            ?: throw Exception("Prompt enrichment failed: empty response")
     }
-
 
 }

@@ -1,7 +1,6 @@
 package com.eltonkola.comfyflux.data
 
 import android.content.SharedPreferences
-import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,13 +27,10 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
     }
 
     fun groqApi(): String {
-        val key = sharedPreferences.getString(GROQ_KEY, "")
-        Log.d("appSettings", "groqApiKey: $key")
-        return key ?: ""
+        return sharedPreferences.getString(GROQ_KEY, "") ?: ""
     }
 
     fun setGroqApiKey(key: String) {
-        Log.d("appSettings", "setAccountExists: $key")
         sharedPreferences.edit().putString(GROQ_KEY, key).apply()
         _settingsState.update { it.copy(grqApiKey = key) }
     }
