@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">ComfyFlux</string>
-    <string name="about_body">ComfyFlux brings the power of ComfyUI to your mobile device! Designed for those of us with multiple computers but limited portability, this app lets you generate images directly from your phone. It’s small, quick, and easy to use, with local-first functionality and optional remote calls to enhance your prompts. Created for ComfyUI and Flux enthusiasts, ComfyFlux is perfect for fun and creative exploration. Feel free to fork and adapt it to fit your needs!</string>
-    <string name="about_link">https://github.com/eltonkola/ComfyFlux</string>
+    <string name="about_body">ComfyFlux is a native Android front end for your own ComfyUI server. Pick a workflow, set the prompt, size and seed, queue the job and review the results, all from your phone on the local network. This is a maintained fork of the original ComfyFlux by Elton Kola.</string>
+    <string name="about_link">https://github.com/sebastian-burlacu/ComfyFlux</string>
     <string name="about_version">Version %1s</string>
     <string name="server_disconnected">Make sure your ComfyUI server is online and on the same network (start it with: python main.py --listen).\nComfyFlux is a minimal front end for simple flows.</string>
 </resources>

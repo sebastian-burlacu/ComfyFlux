@@ -42,7 +42,8 @@ builds).
 - Queue view: running and pending jobs, cancel and clear
 - History view with the generated images, saved locally in the app
 - Prompt database with local search to reuse prompts quickly
-- No account, no cloud: the app talks only to your own server
+- No account required. The app talks to your own server; the only optional
+  remote call is Groq-powered prompt enrichment, off until you add a key
 
 ## Getting Started
 

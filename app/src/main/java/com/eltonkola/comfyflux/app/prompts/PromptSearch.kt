@@ -44,12 +44,12 @@ fun PromptSearch(viewModel: MainViewModel, onPromptSelected: (String) -> Unit) {
     ) {
 
         Text(
-            text = "Prompt search",
+            text = "Prompt library",
             style = MaterialTheme.typography.headlineMedium
         )
         Spacer(modifier = Modifier.size(8.dp))
         Text(
-            text = "Search oje of the 20k+ prompts, looking for inspiration",
+            text = "Over 20,000 community prompts bundled in the app. Search for inspiration, then tap one to use it as your prompt.",
             style = MaterialTheme.typography.bodyLarge
         )
         Spacer(modifier = Modifier.size(8.dp))
@@ -107,6 +107,15 @@ fun PromptSearch(viewModel: MainViewModel, onPromptSelected: (String) -> Unit) {
                 ) {
                     Text(
                         text = line,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            if (lines.itemCount == 0 && lines.loadState.refresh !is androidx.paging.LoadState.Loading) {
+                item {
+                    Text(
+                        text = "No prompts match. Try another word.",
+                        modifier = Modifier.padding(16.dp),
                         fontSize = 12.sp
                     )
                 }

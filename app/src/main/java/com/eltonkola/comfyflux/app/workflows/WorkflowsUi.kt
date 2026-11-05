@@ -58,7 +58,7 @@ fun WorkflowsUi(onSelect: (WorkflowFile) -> Unit, uiState: ImageGenerationUiStat
 
         ExpandableSection(
             expanded = samplesOpen,
-            title = "Sample Workflows",
+            title = "Built-in Workflows",
             onExpand = { samplesOpen = !samplesOpen }
         ) {
 
@@ -99,7 +99,7 @@ fun WorkflowsUi(onSelect: (WorkflowFile) -> Unit, uiState: ImageGenerationUiStat
             onExpand = { localOpen = !localOpen }
         ) {
             Text(
-                text = "Your local workflows.",
+                text = "JSON workflow files from a folder on this device.",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.size(8.dp))
