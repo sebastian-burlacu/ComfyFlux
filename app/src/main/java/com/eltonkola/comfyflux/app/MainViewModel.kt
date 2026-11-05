@@ -15,7 +15,7 @@ import com.eltonkola.comfyflux.data.model.ProgressGenerationUIState
 import com.eltonkola.comfyflux.data.model.Queue
 import com.eltonkola.comfyflux.data.model.QueueUiState
 import com.eltonkola.comfyflux.data.model.WorkflowFile
-import com.eltonkola.comfyflux.data.netwrok.FluxAPI
+import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.app.usecase.HistoryUseCase
 import com.eltonkola.comfyflux.app.usecase.ImageViewerUseCase
 import com.eltonkola.comfyflux.app.usecase.MainUseCase
@@ -59,9 +59,9 @@ class MainViewModel(
         promptSearchUseCase.search(query)
     }
 
-    fun updateSeverUrl(url: String) {
+    fun updateServerUrl(url: String) {
         viewModelScope.launch {
-            mainUseCase.updateSeverUrl(url)
+            mainUseCase.updateServerUrl(url)
         }
     }
 

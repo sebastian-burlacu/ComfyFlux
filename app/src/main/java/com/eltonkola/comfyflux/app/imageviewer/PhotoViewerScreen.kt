@@ -1,4 +1,4 @@
-package com.eltonkola.comfyflux.app.imageviwer
+package com.eltonkola.comfyflux.app.imageviewer
 
 import android.content.ContentValues
 import android.content.Context

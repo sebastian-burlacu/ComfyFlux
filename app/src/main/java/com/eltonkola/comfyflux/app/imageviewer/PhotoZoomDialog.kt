@@ -1,4 +1,4 @@
-package com.eltonkola.comfyflux.app.imageviwer
+package com.eltonkola.comfyflux.app.imageviewer
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize

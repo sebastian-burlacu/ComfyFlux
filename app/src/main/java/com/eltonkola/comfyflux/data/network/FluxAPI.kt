@@ -1,4 +1,4 @@
-package com.eltonkola.comfyflux.data.netwrok
+package com.eltonkola.comfyflux.data.network
 
 import android.net.Uri
 import android.util.Log

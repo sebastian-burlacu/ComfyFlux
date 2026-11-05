@@ -11,8 +11,8 @@ import com.eltonkola.comfyflux.data.model.WorkflowFile
 import com.eltonkola.comfyflux.data.model.updatePrompt
 import com.eltonkola.comfyflux.data.model.updateSeed
 import com.eltonkola.comfyflux.data.model.updateSizeAndBatch
-import com.eltonkola.comfyflux.data.netwrok.FluxAPI
-import com.eltonkola.comfyflux.data.netwrok.GroqAPI
+import com.eltonkola.comfyflux.data.network.FluxAPI
+import com.eltonkola.comfyflux.data.network.GroqAPI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +31,7 @@ class MainUseCase(
     private val _uiState = MutableStateFlow(ImageGenerationUiState())
     val uiState: StateFlow<ImageGenerationUiState> = _uiState.asStateFlow()
 
-    suspend fun updateSeverUrl(url: String) {
+    suspend fun updateServerUrl(url: String) {
         fluxAPI.setServerAddress(url)
         _uiState.update { it.copy(server = url) }
     }

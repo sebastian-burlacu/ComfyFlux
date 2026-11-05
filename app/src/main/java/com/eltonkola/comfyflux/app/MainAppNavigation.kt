@@ -7,7 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.eltonkola.comfyflux.app.imageviwer.PhotoViewerScreen
+import com.eltonkola.comfyflux.app.imageviewer.PhotoViewerScreen
 import com.eltonkola.comfyflux.app.settings.SettingsScreen
 import com.eltonkola.comfyflux.ui.theme.ComfyFluxTheme
 import org.koin.androidx.compose.koinViewModel
@@ -19,7 +19,7 @@ enum class AppScreens(val screenName: String) {
 }
 
 @Composable
-fun MainApp(
+fun ComfyFluxApp(
     viewModel: MainViewModel = koinViewModel()
 ) {
 

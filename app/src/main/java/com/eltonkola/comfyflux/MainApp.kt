@@ -11,8 +11,8 @@ import com.eltonkola.comfyflux.app.usecase.QueueUseCase
 import com.eltonkola.comfyflux.app.usecase.TimerUseCase
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.PromptRepo
-import com.eltonkola.comfyflux.data.netwrok.FluxAPI
-import com.eltonkola.comfyflux.data.netwrok.GroqAPI
+import com.eltonkola.comfyflux.data.network.FluxAPI
+import com.eltonkola.comfyflux.data.network.GroqAPI
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.androidx.viewmodel.dsl.viewModelOf

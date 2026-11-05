@@ -24,7 +24,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
-import com.eltonkola.comfyflux.data.netwrok.DEFAULT_URL
+import com.eltonkola.comfyflux.data.network.DEFAULT_URL
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Refresh
 import com.eltonkola.comfyflux.ui.theme.ikona.Server
@@ -36,7 +36,7 @@ fun ServerConnectionUi(viewModel: MainViewModel, uiState: ImageGenerationUiState
 
     TextField(
         value = uiState.server,
-        onValueChange = { newText -> viewModel.updateSeverUrl(newText) },
+        onValueChange = { newText -> viewModel.updateServerUrl(newText) },
         label = { Text("ComfyUi Server IP and Port") },
         placeholder = { Text("e.g., $DEFAULT_URL") },
         modifier = Modifier.fillMaxWidth(),

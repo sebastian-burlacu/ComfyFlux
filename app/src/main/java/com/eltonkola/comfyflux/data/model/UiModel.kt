@@ -1,6 +1,6 @@
 package com.eltonkola.comfyflux.data.model
 
-import com.eltonkola.comfyflux.data.netwrok.DEFAULT_URL
+import com.eltonkola.comfyflux.data.network.DEFAULT_URL
 import com.eltonkola.comfyflux.app.usecase.generateRandom16DigitNumber
 
 
