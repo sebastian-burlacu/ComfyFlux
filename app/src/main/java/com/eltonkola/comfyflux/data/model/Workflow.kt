@@ -11,15 +11,18 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 object WorkflowSerializer : KSerializer<Workflow> {
     override val descriptor: SerialDescriptor =
@@ -49,47 +52,8 @@ object WorkflowSerializer : KSerializer<Workflow> {
 @Serializable(with = WorkflowSerializer::class)
 class Workflow : MutableMap<String, Node<JsonElement>> by mutableMapOf() {
 
-    companion object {
-        const val SIZE = "5" // width, height, batch nr
-        const val PROMPT = "6" //prompt
-        const val KSAMPLER = "3" //it has seed
-        const val RANDOMNOISE = "25" //it has seed for FLUX
-    }
-
-    inline fun <reified T> getTypedNode(id: String): Node<T>? {
-        return this[id]?.let { node ->
-            Node(
-                inputs = Json.decodeFromJsonElement<T>(node.inputs),
-                classType = node.classType,
-                meta = node.meta
-            )
-        }
-    }
-
-    fun updateNode(id: String, updateFunction: (Node<JsonElement>) -> Node<JsonElement>) {
-        this[id]?.let { node ->
-            this[id] = updateFunction(node)
-        }
-    }
-
-    inline fun <reified T> updateTypedNode(id: String, updateFunction: (Node<T>) -> Node<T>) {
-        getTypedNode<T>(id)?.let { node ->
-            val updatedNode = updateFunction(node)
-            this[id] = Node(
-                inputs = Json.encodeToJsonElement(updatedNode.inputs),
-                classType = updatedNode.classType,
-                meta = updatedNode.meta
-            )
-        }
-    }
-
     fun toJson(): String {
         return Json.encodeToString(this)
-    }
-
-    fun getPrompt(): String {
-        val prompt = this.getTypedNode<PromptInputs>(PROMPT)
-        return prompt!!.inputs.text
     }
 }
 
@@ -107,63 +71,109 @@ data class Meta(
     val title: String
 )
 
-@Serializable
-data class SizeInputs(
-    val width: Int,
-    val height: Int,
-    @SerialName("batch_size")
-    val batchSize: Int
+private const val CLIP_TEXT_ENCODE = "CLIPTextEncode"
+
+// Nodes that consume conditioning; walking their conditioning links leads to
+// the text encoder that holds the positive prompt.
+private val CONDITIONING_CONSUMERS = setOf(
+    "KSampler",
+    "KSamplerAdvanced",
+    "SamplerCustom",
+    "SamplerCustomAdvanced",
+    "CFGGuider"
 )
 
-@Serializable
-data class PromptInputs(
-    val text: String,
-    val clip: JsonElement
+// Input names that carry conditioning links.
+private val CONDITIONING_INPUTS = setOf("positive", "positive_input", "conditioning")
+
+// class_type -> name of the input that holds its seed
+private val SEED_INPUTS = mapOf(
+    "KSampler" to "seed",
+    "KSamplerAdvanced" to "noise_seed",
+    "RandomNoise" to "noise_seed"
 )
 
+// A link is a JsonArray [nodeId, outputSlot]; return the referenced node id.
+private fun JsonElement.linkedNodeId(): String? {
+    val array = this as? JsonArray ?: return null
+    return array.firstOrNull()?.jsonPrimitive?.contentOrNull
+}
+
+private fun Node<JsonElement>.conditioningLinks(): List<String> =
+    inputs.jsonObject
+        .filterKeys { it in CONDITIONING_INPUTS }
+        .values
+        .mapNotNull { it.linkedNodeId() }
+
+/**
+ * Ids of the CLIPTextEncode nodes that feed the sampler chain (positive
+ * conditioning), so only the positive prompt is replaced. Falls back to the
+ * first text encoder when nothing is linked, so simple or foreign workflows
+ * still receive the prompt instead of silently keeping their placeholder.
+ */
+fun Workflow.promptNodeIds(): List<String> {
+    val visited = mutableSetOf<String>()
+    val found = mutableListOf<String>()
+    val queue = ArrayDeque<String>()
+
+    filterValues { it.classType in CONDITIONING_CONSUMERS }
+        .forEach { (_, node) -> queue.addAll(node.conditioningLinks()) }
+
+    while (queue.isNotEmpty()) {
+        val id = queue.removeFirst()
+        if (!visited.add(id)) continue
+        val node = this[id] ?: continue
+        if (node.classType == CLIP_TEXT_ENCODE) found += id
+        queue.addAll(node.conditioningLinks())
+    }
+
+    if (found.isEmpty()) {
+        entries.firstOrNull { it.value.classType == CLIP_TEXT_ENCODE }?.let { found += it.key }
+    }
+    return found
+}
+
+private fun Workflow.replaceInputs(id: String, replacements: Map<String, JsonPrimitive>) {
+    val node = this[id] ?: return
+    val updated = buildJsonObject {
+        node.inputs.jsonObject.forEach { (key, value) ->
+            put(key, replacements[key] ?: value)
+        }
+    }
+    this[id] = node.copy(inputs = updated)
+}
 
 fun Workflow.updateSizeAndBatch(width: Int, height: Int, batchSize: Int) {
-    this.updateTypedNode<SizeInputs>(Workflow.SIZE) { node ->
-        node.copy(
-            inputs = node.inputs.copy(
-                width = width,
-                height = height,
-                batchSize = batchSize
+    filterValues { it.classType == "EmptyLatentImage" }
+        .keys.toList()
+        .forEach { id ->
+            replaceInputs(
+                id,
+                mapOf(
+                    "width" to JsonPrimitive(width),
+                    "height" to JsonPrimitive(height),
+                    "batch_size" to JsonPrimitive(batchSize)
+                )
             )
-        )
-    }
+        }
 }
 
 fun Workflow.updatePrompt(prompt: String) {
-    this.updateTypedNode<PromptInputs>(Workflow.PROMPT) { node ->
-        node.copy(
-            inputs = node.inputs.copy(
-                text = prompt
-            )
-        )
+    promptNodeIds().forEach { id ->
+        replaceInputs(id, mapOf("text" to JsonPrimitive(prompt)))
     }
-}
-
-
-fun updateSeed(node: Node<JsonElement>, seedKey: String, newSeed: Long): Node<JsonElement> {
-    val currentInputs = node.inputs.jsonObject
-    val updatedInputs = buildJsonObject {
-        currentInputs.forEach { (key, value) ->
-            if (key == seedKey) {
-                put(key, JsonPrimitive(newSeed))
-            } else {
-                put(key, value)
-            }
-        }
-    }
-    return node.copy(inputs = updatedInputs)
 }
 
 fun Workflow.updateSeed(seed: Long) {
-    this.updateNode(Workflow.KSAMPLER) { node ->
-        updateSeed(node, "seed", seed)
+    entries.toList().forEach { (id, node) ->
+        SEED_INPUTS[node.classType]?.let { key ->
+            replaceInputs(id, mapOf(key to JsonPrimitive(seed)))
+        }
     }
-    this.updateNode(Workflow.RANDOMNOISE) { node ->
-        updateSeed(node, "noise_seed", seed)
-    }
+}
+
+/** Prompt text of the positive text encoder; "" when the workflow has none. */
+fun Workflow.getPrompt(): String {
+    val id = promptNodeIds().firstOrNull() ?: return ""
+    return this[id]?.inputs?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
 }
