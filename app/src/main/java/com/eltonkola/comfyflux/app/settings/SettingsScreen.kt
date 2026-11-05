@@ -128,6 +128,22 @@ fun SettingsScreen(
 
 
             Text(
+                text = "Verbose logging: ${if (uiState.verboseLogging) "On" else "Off"}",
+                fontSize = 20.sp
+            )
+            Text(
+                text = "Keeps HTTP request traces, websocket events and error stack traces in Settings -> Logs. Turn on when reporting a problem.",
+                fontSize = 12.sp
+            )
+            Switch(
+                checked = uiState.verboseLogging,
+                onCheckedChange = {
+                    viewModel.updateVerboseLogging(it)
+                }
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
                 text = "Prompt enrichment (Groq) API key",
                 fontSize = 20.sp
             )

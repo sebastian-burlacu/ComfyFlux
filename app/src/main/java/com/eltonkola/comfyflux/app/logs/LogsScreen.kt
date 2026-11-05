@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +40,7 @@ import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Back
 import com.eltonkola.comfyflux.ui.theme.ikona.Clean
+import com.eltonkola.comfyflux.ui.theme.ikona.Download
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,6 +50,27 @@ fun LogsScreen(navController: NavController) {
     val logStore: LogStore = koinInject()
     val entries by logStore.entries.collectAsState()
     var errorsOnly by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val exportLogs = {
+        try {
+            val dir = java.io.File(context.cacheDir, "logs").apply { mkdirs() }
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+            val file = java.io.File(dir, "comfyflux-logs-$stamp.txt")
+            file.writeText(logStore.exportText())
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", file
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(android.content.Intent.createChooser(intent, "Export logs"))
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val shown = if (errorsOnly) entries.filter { it.level == LogLevel.ERROR } else entries
 
@@ -65,6 +88,13 @@ fun LogsScreen(navController: NavController) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { exportLogs() }) {
+                        Icon(
+                            imageVector = Ikona.Download,
+                            contentDescription = "Export logs",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                     IconButton(onClick = { logStore.clear() }) {
                         Icon(
                             imageVector = Ikona.Clean,
@@ -123,6 +153,7 @@ private fun LogRow(entry: LogEntry) {
     val color = when (entry.level) {
         LogLevel.ERROR -> MaterialTheme.colorScheme.error
         LogLevel.WARN -> MaterialTheme.colorScheme.tertiary
+        LogLevel.DEBUG -> MaterialTheme.colorScheme.outline
         LogLevel.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Column(

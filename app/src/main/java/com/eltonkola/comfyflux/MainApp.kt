@@ -43,6 +43,11 @@ class MainApp : Application(), KoinComponent {
         // app is not in front.
         val appState: AppState = get()
         ProcessLifecycleOwner.get().lifecycle.addObserver(appState)
+
+        // Re-arm verbose logging from persisted settings.
+        val appSettings: AppSettings = get()
+        val logStore: LogStore = get()
+        logStore.verbose = appSettings.settingsState.value.verboseLogging
     }
 }
 

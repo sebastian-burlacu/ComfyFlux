@@ -3,6 +3,7 @@ package com.eltonkola.comfyflux.data.network
 import android.net.Uri
 import android.util.Log
 import com.eltonkola.comfyflux.data.LogStore
+import com.eltonkola.comfyflux.data.exceptionChain
 import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ProgressGenerationUIState
 import com.eltonkola.comfyflux.data.model.PromptRequest
@@ -209,17 +210,35 @@ class FluxAPI(private val logStore: LogStore) {
             throw Exception(decodeFailureReason(body, endpoint, status), e)
         }
 
-    suspend fun fetchObjectInfo(): JsonObject {
-        objectInfoCache?.let { return it }
+    /** Times every server call; failures always land in the log, traces only when verbose. */
+    private suspend fun <T> traced(endpoint: String, block: suspend () -> T): T {
+        val started = System.currentTimeMillis()
+        try {
+            val result = block()
+            logStore.debug("client", "$endpoint ok in ${System.currentTimeMillis() - started} ms")
+            return result
+        } catch (e: Exception) {
+            logStore.error("client", "$endpoint failed in ${System.currentTimeMillis() - started} ms: ${e.javaClass.simpleName}: ${e.message}")
+            logStore.debug("client", exceptionChain(e))
+            throw e
+        }
+    }
+
+    suspend fun fetchObjectInfo(): JsonObject = traced("/object_info") {
+        objectInfoCache?.let {
+            logStore.debug("client", "/object_info from cache (${it.size} nodes)")
+            return@traced it
+        }
         val response = client.get("$serverAddress/object_info")
         val body = response.bodyAsText()
+        logStore.debug("client", "/object_info HTTP ${response.status.value}, ${body.length} chars")
         val info = decodeBody<JsonElement>(body, "/object_info", response.status.value).jsonObject
         objectInfoCache = info
-        return info
+        info
     }
 
     /** Workflow names saved in the ComfyUI web UI (server user data). */
-    suspend fun fetchWorkflowNames(): List<String> {
+    suspend fun fetchWorkflowNames(): List<String> = traced("/userdata?dir=workflows") {
         val response = client.get("$serverAddress/userdata") {
             parameter("dir", "workflows")
         }
@@ -233,20 +252,26 @@ class FluxAPI(private val logStore: LogStore) {
             } ?: emptyList()
             else -> emptyList()
         }
-        return names.filter { it.endsWith(".json") }.map { it.removeSuffix(".json") }.sorted()
+        names.filter { it.endsWith(".json") }.map { it.removeSuffix(".json") }.sorted()
     }
 
-    suspend fun fetchWorkflowContent(name: String): String {
+    suspend fun fetchWorkflowContent(name: String): String = traced("/userdata/workflows/$name") {
         // aiohttp matches the raw path: %2F keeps the file route's single segment.
         val encoded = java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")
         val response = client.get("$serverAddress/userdata/workflows%2F$encoded")
-        return response.bodyAsText()
+        val body = response.bodyAsText()
+        logStore.debug("client", "/userdata/workflows/$name HTTP ${response.status.value}, ${body.length} chars")
+        if (body.isBlank()) {
+            throw Exception("Workflow '$name' came back empty (HTTP ${response.status.value}) - the file is missing on the server or ComfyUI is restarting")
+        }
+        body
     }
 
-    private suspend fun queuePrompt(promptRequest: PromptRequest): String {
+    private suspend fun queuePrompt(promptRequest: PromptRequest): String = traced("POST /prompt") {
         val prompt = Json.encodeToString(promptRequest)
 
         Log.d("FluxAPI", "Sending prompt: $prompt")
+        logStore.debug("client", "POST /prompt body ${prompt.length} chars, ${promptRequest.prompt.size} nodes")
         val response = client.post("$serverAddress/prompt") {
             contentType(ContentType.Application.Json)
             setBody(prompt)
@@ -254,7 +279,8 @@ class FluxAPI(private val logStore: LogStore) {
         val responseBody = response.bodyAsText()
         Log.d("FluxAPI", "Received response: $responseBody")
         val jsonResponse = decodeBody<QueuePromptResponse>(responseBody, "/prompt", response.status.value)
-        return jsonResponse.prompt_id
+        logStore.debug("client", "queued as ${jsonResponse.prompt_id}")
+        jsonResponse.prompt_id
     }
 
     private val _progressUiState = MutableStateFlow(ProgressGenerationUIState())
@@ -342,12 +368,14 @@ class FluxAPI(private val logStore: LogStore) {
         val (address, port) = extractAddressAndPort(serverAddress)
         try {
             withTimeout(GENERATION_TIMEOUT_MS) {
+                logStore.debug("client", "connecting websocket /ws?clientId=$clientId")
                 wsClient.webSocket(
                     method = HttpMethod.Get,
                     host = address,
                     port = port,
                     path = "/ws?clientId=$clientId"
                 ) {
+                    logStore.debug("client", "websocket connected")
                     for (frame in incoming) {
                         if (frame !is Frame.Text) continue
                         val messageText = frame.readText()
@@ -355,6 +383,11 @@ class FluxAPI(private val logStore: LogStore) {
 
                         val wsMessage = WSMessage.fromJson(messageText)
                         Log.d("FluxAPI", "Received ws message: $wsMessage")
+                        logStore.debug(
+                            "client",
+                            "ws event: ${wsMessage.javaClass.simpleName}" +
+                                    (wsMessage.promptId?.let { " prompt=${it.take(8)}" } ?: "")
+                        )
 
                         // Ignore events belonging to prompts owned by other clients.
                         if (wsMessage.promptId != null && wsMessage.promptId != promptId) continue
@@ -441,18 +474,18 @@ class FluxAPI(private val logStore: LogStore) {
                 message is WSMessage.ExecutionInterruptedMessage
     }
 
-    suspend fun checkSystemStats(): SystemStats {
+    suspend fun checkSystemStats(): SystemStats = traced("/system_stats") {
         Log.d("FluxAPI", "call checkSystemStats")
         val response = client.get("$serverAddress/system_stats") {
             contentType(ContentType.Application.Json)
         }
         val responseBody = response.bodyAsText()
         Log.d("FluxAPI", "Received response: $responseBody")
-        return decodeBody<SystemStats>(responseBody, "/system_stats", response.status.value)
+        decodeBody<SystemStats>(responseBody, "/system_stats", response.status.value)
     }
 
-    suspend fun fetchHistory(): List<HistoryItem> {
-        return withContext(Dispatchers.IO) {
+    suspend fun fetchHistory(): List<HistoryItem> = traced("/history") {
+        withContext(Dispatchers.IO) {
             val response = client.get("$serverAddress/history")
             val responseBody = response.bodyAsText()
 
@@ -464,8 +497,8 @@ class FluxAPI(private val logStore: LogStore) {
         }
     }
 
-    suspend fun fetchQueue(): Queue {
-        return withContext(Dispatchers.IO) {
+    suspend fun fetchQueue(): Queue = traced("/queue") {
+        withContext(Dispatchers.IO) {
             val response = client.get("$serverAddress/queue")
             val responseBody = response.bodyAsText()
 
@@ -502,14 +535,14 @@ class FluxAPI(private val logStore: LogStore) {
         )
     }
 
-    suspend fun deleteHistory(id: String) {
+    suspend fun deleteHistory(id: String) = traced("POST /history delete") {
         val deleteBody = buildJsonObject {
             putJsonArray("delete") {
                 add(id)
             }
         }.toString()
 
-        return withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             val response = client.post("$serverAddress/history") {
                 contentType(ContentType.Application.Json)
                 setBody(deleteBody)
@@ -518,18 +551,19 @@ class FluxAPI(private val logStore: LogStore) {
 
             Log.d("FluxAPI", "Received deleteHistory: $deleteBody")
             Log.d("FluxAPI", "Received delete history: $responseBody")
+            Unit
         }
     }
 
 
-    suspend fun cancelWorkflow(id: String) {
+    suspend fun cancelWorkflow(id: String) = traced("POST /queue delete") {
         val deleteBody = buildJsonObject {
             putJsonArray("delete") {
                 add(id)
             }
         }.toString()
 
-        return withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             val response = client.post("$serverAddress/queue") {
                 contentType(ContentType.Application.Json)
                 setBody(deleteBody)
@@ -539,6 +573,7 @@ class FluxAPI(private val logStore: LogStore) {
             Log.d("FluxAPI", "Received deleteBody: $deleteBody")
 
             Log.d("FluxAPI", "Received delete workflow: $responseBody")
+            Unit
         }
     }
 

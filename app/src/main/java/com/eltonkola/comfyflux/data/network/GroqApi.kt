@@ -138,14 +138,20 @@ class GroqAPI(private val appSettings: AppSettings) {
         }
 
         if (!response.status.isSuccess()) {
-            // e.g. 401 for a missing/expired key; surfaced by callers.
-            throw Exception("Prompt enrichment failed: ${response.status}")
+            // e.g. 401 for a missing/expired key, 500 when Groq's own model
+            // run fails; Groq puts the reason in the body, so include it.
+            val body = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
+            throw Exception("Prompt enrichment failed: HTTP ${response.status.value} ${body.take(300)}")
         }
 
         val responseBody = response.bodyAsText()
         Log.d("GrowAPI", "enrichPrompt status: ${response.status}")
 
-        val apiResponse = Json.decodeFromString<ApiResponse>(responseBody)
+        val apiResponse = try {
+            Json.decodeFromString<ApiResponse>(responseBody)
+        } catch (e: kotlinx.serialization.SerializationException) {
+            throw Exception(decodeFailureReason(responseBody, "groq /chat/completions", response.status.value), e)
+        }
         return apiResponse.choices.firstOrNull()?.message?.content
             ?: throw Exception("Prompt enrichment failed: empty response")
     }

@@ -51,7 +51,9 @@ builds).
   seed and the selected bundled workflow are restored on launch
 - In-app logs (Settings -> Logs): server-reported failures like failed
   executions and rejected prompts, plus client-side connection, timeout
-  and conversion errors; filterable to errors, clearable
+  and conversion errors; filterable to errors, clearable, and exportable
+  to a text file for sharing; a "Verbose logging" switch additionally
+  keeps HTTP request traces, websocket events and error stack traces
 - Notifications when a generation finishes or fails while the app is in
   the background; failed generations get a "Retry with same settings"
   button on the Create screen; "Seed +1" reroll for iterating on a

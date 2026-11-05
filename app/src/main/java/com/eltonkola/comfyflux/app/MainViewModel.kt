@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.eltonkola.comfyflux.data.AppSettings
+import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.PromptRepo
 import com.eltonkola.comfyflux.data.SettingsState
 import com.eltonkola.comfyflux.data.model.HistoryItem
@@ -39,6 +40,7 @@ class MainViewModel(
     private val queueUseCase: QueueUseCase,
     private val mainUseCase: MainUseCase,
     private val appSettings: AppSettings,
+    private val logStore: LogStore,
     private val timerUseCase: TimerUseCase
 ) : AndroidViewModel(applicationContext) {
 
@@ -235,6 +237,11 @@ class MainViewModel(
 
     fun updateDynamicColor(dynamic: Boolean) {
         appSettings.setDynamicColor(dynamic)
+    }
+
+    fun updateVerboseLogging(verbose: Boolean) {
+        appSettings.setVerboseLogging(verbose)
+        logStore.verbose = verbose
     }
 
     fun setGrqApiKey(key: String) {

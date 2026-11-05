@@ -31,13 +31,14 @@ data class SettingsState(
     val dark: Boolean,
     val system: Boolean,
     val dynamicColor: Boolean,
-    val grqApiKey: String
+    val grqApiKey: String,
+    val verboseLogging: Boolean
 )
 
 class AppSettings(private val sharedPreferences: SharedPreferences) {
 
     private val _settingsState =
-        MutableStateFlow(SettingsState(isDarkTheme(), isSystemTheme(), isDynamicColor(), groqApi()))
+        MutableStateFlow(SettingsState(isDarkTheme(), isSystemTheme(), isDynamicColor(), groqApi(), verboseLogging()))
     val settingsState: StateFlow<SettingsState> = _settingsState.asStateFlow()
 
     companion object {
@@ -48,6 +49,7 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         const val SERVER_URL = "server_url"
         const val RECENT_PROMPTS = "recent_prompts"
         const val GENERATION_DRAFT = "generation_draft"
+        const val VERBOSE_LOGGING = "verbose_logging"
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -74,6 +76,16 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         return normalizeServerUrl(
             sharedPreferences.getString(SERVER_URL, DEFAULT_URL) ?: DEFAULT_URL
         )
+    }
+
+    private fun verboseLogging(): Boolean {
+        return sharedPreferences.getBoolean(VERBOSE_LOGGING, false)
+    }
+
+    /** On: the log keeps DEBUG entries (HTTP/websocket traces, stack chains). */
+    fun setVerboseLogging(value: Boolean) {
+        sharedPreferences.edit().putBoolean(VERBOSE_LOGGING, value).apply()
+        _settingsState.update { it.copy(verboseLogging = value) }
     }
 
     fun setServerUrl(url: String) {

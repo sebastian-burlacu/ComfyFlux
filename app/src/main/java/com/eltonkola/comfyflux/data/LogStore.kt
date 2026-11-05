@@ -7,7 +7,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class LogLevel { INFO, WARN, ERROR }
+enum class LogLevel { DEBUG, INFO, WARN, ERROR }
 
 data class LogEntry(
     val timestamp: Long,
@@ -27,14 +27,21 @@ data class LogEntry(
 /**
  * In-memory event log surfaced by Settings -> Logs. Bounded ring buffer: the
  * app lives across reconnects and retries, unbounded growth would be the bug.
+ *
+ * DEBUG entries (HTTP traces, websocket events, stack chains) are only kept
+ * while [verbose] is on - the Settings switch - so normal use stays readable.
  */
-class LogStore(private val capacity: Int = 400) {
+class LogStore(private val capacity: Int = 1000) {
+
+    @Volatile
+    var verbose = false
 
     private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
     val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
 
     @Synchronized
     fun log(level: LogLevel, source: String, message: String) {
+        if (level == LogLevel.DEBUG && !verbose) return
         val entry = LogEntry(
             timestamp = System.currentTimeMillis(),
             level = level,
@@ -46,12 +53,38 @@ class LogStore(private val capacity: Int = 400) {
         }
     }
 
+    fun debug(source: String, message: String) = log(LogLevel.DEBUG, source, message)
     fun info(source: String, message: String) = log(LogLevel.INFO, source, message)
     fun warn(source: String, message: String) = log(LogLevel.WARN, source, message)
     fun error(source: String, message: String) = log(LogLevel.ERROR, source, message)
+
+    /** Plain-text dump of every kept entry, newest last, for export/sharing. */
+    fun exportText(): String {
+        val header = "ComfyFlux log export ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}" +
+                " (${_entries.value.size} entries, verbose=$verbose)"
+        return (listOf(header) + _entries.value.map {
+            "${it.timeString()} ${it.level.name} [${it.source}] ${it.message}"
+        }).joinToString("\n")
+    }
 
     @Synchronized
     fun clear() {
         _entries.value = emptyList()
     }
+}
+
+/** Full exception chain (class: message, then each cause) with the top frames, for debugging. */
+fun exceptionChain(e: Throwable, maxFrames: Int = 12): String {
+    val sb = StringBuilder()
+    var current: Throwable? = e
+    var depth = 0
+    while (current != null && depth < 5) {
+        if (depth > 0) sb.append("\nCaused by: ")
+        sb.append(current.javaClass.name).append(": ").append(current.message)
+        current.stackTrace.take(maxFrames).forEach { frame -> sb.append("\n    at ").append(frame) }
+        val cause = current.cause
+        current = if (cause === current) null else cause
+        depth++
+    }
+    return sb.toString()
 }

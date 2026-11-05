@@ -9,6 +9,7 @@ import com.eltonkola.comfyflux.data.AppState
 import com.eltonkola.comfyflux.data.GenerationDraft
 import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.Notifier
+import com.eltonkola.comfyflux.data.exceptionChain
 import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.PromptRequest
@@ -22,6 +23,7 @@ import com.eltonkola.comfyflux.data.model.updateSizeAndBatch
 import com.eltonkola.comfyflux.data.model.workflows
 import com.eltonkola.comfyflux.data.network.ComfyJson
 import com.eltonkola.comfyflux.data.network.ComfyServerException
+import com.eltonkola.comfyflux.data.network.decodeFailureReason
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
 import com.eltonkola.comfyflux.data.network.normalizeServerUrl
@@ -129,6 +131,7 @@ class MainUseCase(
             saveDraft()
         } catch (e: Exception) {
             logStore.error("client", "prompt enrichment failed: ${e.message}")
+            logStore.debug("client", exceptionChain(e))
             _uiState.update {
                 it.copy(enrichingPrompt = false, promptEnrichError = "Prompt enrichment failed: ${e.message ?: "unknown error"}")
             }
@@ -203,7 +206,11 @@ class MainUseCase(
         val workflowConfig = _uiState.value.workflow
         val workflow: Workflow = if (workflowConfig.isServer) {
             val raw = fluxAPI.fetchWorkflowContent(workflowConfig.name)
-            val element = ComfyJson.parseToJsonElement(raw)
+            val element = try {
+                ComfyJson.parseToJsonElement(raw)
+            } catch (e: kotlinx.serialization.SerializationException) {
+                throw Exception(decodeFailureReason(raw, "workflow ${workflowConfig.name}", 200), e)
+            }
             if (element is JsonObject && element.containsKey("nodes")) {
                 WorkflowConverter(fluxAPI.fetchObjectInfo()).convert(element)
             } else {
@@ -302,6 +309,7 @@ class MainUseCase(
         }
         val source = if (e is ComfyServerException) "server" else "client"
         logStore.error(source, "$label: $message")
+        logStore.debug(source, exceptionChain(e))
         fluxAPI.setGenerationError(message)
         notifier.generationFinished(appState.foreground, success = false, detail = message)
         e.printStackTrace()
