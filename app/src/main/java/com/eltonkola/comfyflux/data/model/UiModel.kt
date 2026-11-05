@@ -26,10 +26,10 @@ data class HistoryItem(
 )
 
 data class Queue(
-    val running: List<Workflow>,
-    val pending: List<Workflow>,
+    val running: List<Item>,
+    val pending: List<Item>,
 ) {
-    data class Workflow(
+    data class Item(
         val id: String,
         val prompt: String
     )
@@ -48,10 +48,12 @@ data class ProgressGenerationUIState(
     val remainingNodes: List<String> = emptyList()
 ) {
     fun totalProgress(): Float {
+        if (allNodes.isEmpty()) return 0f
         return (allNodes.size - remainingNodes.size) / allNodes.size.toFloat()
     }
 
     fun partialProgress(): Float {
+        if (maxProgress == 0) return 0f
         return progress / maxProgress.toFloat()
     }
 }

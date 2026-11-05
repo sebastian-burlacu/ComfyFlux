@@ -350,22 +350,22 @@ class FluxAPI {
         Log.d("FluxAPI", "call QueueResponse normalize: $this")
 
         return Queue(
-            running = this.queue_running.map { it.toQueueWorkflow() },
-            pending = this.queue_pending.map { it.toQueueWorkflow() }
+            running = this.queue_running.map { it.toQueueItem() },
+            pending = this.queue_pending.map { it.toQueueItem() }
         )
     }
 
-    private fun JsonElement.toQueueWorkflow(): Queue.Workflow {
+    private fun JsonElement.toQueueItem(): Queue.Item {
 
         val workflow = Json.decodeFromString<Workflow>(this.jsonArray[2].toString())
 
         val prompt = workflow.getPrompt()
         val id = this.jsonArray[1].toString().replace("\"", "")
 
-        Log.d("FluxAPI", "call toQueueWorkflow: $this")
+        Log.d("FluxAPI", "call toQueueItem: $this")
 
 
-        return Queue.Workflow(
+        return Queue.Item(
             prompt = prompt,
             id = id
         )

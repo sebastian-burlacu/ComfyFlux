@@ -167,7 +167,7 @@ fun QueueTab(viewModel: MainViewModel) {
 
 @SuppressLint("SuspiciousIndentation")
 @Composable
-fun QueueRowUi(item: Queue.Workflow, isRunning: Boolean, onCancel: (Queue.Workflow) -> Unit) {
+fun QueueRowUi(item: Queue.Item, isRunning: Boolean, onCancel: (Queue.Item) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
