@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -37,4 +37,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             app/build/outputs/apk/release/app-release.apk \
             --title "ComfyFlux $GITHUB_REF_NAME" \
-            --notes "Bugfix build: class_type-based workflow patching, correct websocket lifecycle (errors/interrupts surfaced), prompt escaping fix, no more API-key logging. Signed with the fork's test keystore - uninstall any older ComfyFlux install first."
+            --notes "ComfyFlux $GITHUB_REF_NAME. Changes: https://github.com/sebastian-burlacu/ComfyFlux/commits/$GITHUB_REF_NAME"
