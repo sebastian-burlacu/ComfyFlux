@@ -78,7 +78,29 @@ builds).
 The app ships with tested local image workflows, and it also lists the
 workflows you save in the ComfyUI web UI: they are fetched from the server,
 converted to the API format the queue endpoint expects (including subgraphs),
-and patched with your prompt, size and seed before queueing.
+and patched with your prompt, size, seed, CFG and steps before queueing.
+
+## Documentation
+
+* [Getting started](docs/getting-started.md) — connection, generating, prompts, drafts
+* [How workflows work](docs/workflows.md) — formats, what gets patched, requirements, what's deliberately out of scope
+* [Troubleshooting & bug reports](docs/troubleshooting.md) — reading the log, common errors, limits
+
+## Reporting a problem
+
+Every action the app takes is visible in **Settings → Logs**, tagged `server`
+(what your ComfyUI reported) or `client` (app-side failures). To produce a
+report that actually pinpoints a bug:
+
+1. Turn on **Settings → Verbose logging** (keeps HTTP traces, websocket
+   events and stack traces).
+2. Reproduce the problem once.
+3. **Settings → Logs → download icon** exports a text file via the share
+   sheet.
+4. Open an [issue](https://github.com/sebastian-burlacu/ComfyFlux/issues)
+   with the app version, what you expected, and the exported log attached.
+
+Keep the log before restarting the app — the log lives in memory.
 
 ## Built With
 
