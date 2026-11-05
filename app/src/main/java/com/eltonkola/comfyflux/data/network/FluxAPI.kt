@@ -82,6 +82,14 @@ data class QueuePromptResponse(
 
 const val DEFAULT_URL = "http://192.168.1.5:8188"
 
+// Server responses evolve with every ComfyUI update (RAM, comfyui_version,
+// comfy_session, remotes, extra node fields). Decode leniently so newer
+// servers never crash the app.
+internal val ComfyJson = Json {
+    ignoreUnknownKeys = true
+    coerceInputValues = true
+}
+
 /**
  * Accepts what users actually type ("192.168.1.5:8188", trailing slashes,
  * surrounding whitespace) and turns it into a usable base URL.
@@ -151,7 +159,7 @@ class FluxAPI {
         }
         val responseBody = response.bodyAsText()
         Log.d("FluxAPI", "Received response: $responseBody")
-        val jsonResponse = Json.decodeFromString<QueuePromptResponse>(responseBody)
+        val jsonResponse = ComfyJson.decodeFromString<QueuePromptResponse>(responseBody)
         return jsonResponse.prompt_id
     }
 
@@ -321,7 +329,7 @@ class FluxAPI {
         }
         val responseBody = response.bodyAsText()
         Log.d("FluxAPI", "Received response: $responseBody")
-        return Json.decodeFromString<SystemStats>(responseBody)
+        return ComfyJson.decodeFromString<SystemStats>(responseBody)
     }
 
     suspend fun fetchHistory(): List<HistoryItem> {
@@ -330,7 +338,7 @@ class FluxAPI {
             val responseBody = response.bodyAsText()
 
             Log.d("FluxAPI", "Received fetchHistory responseBody: $responseBody")
-            val history = Json.decodeFromString<Map<String, HistoryResponse>>(responseBody)
+            val history = ComfyJson.decodeFromString<Map<String, HistoryResponse>>(responseBody)
             Log.d("FluxAPI", "call fetchHistory history: $history")
 
             history.values.map { it.normalize() }
@@ -343,7 +351,7 @@ class FluxAPI {
             val responseBody = response.bodyAsText()
 
             Log.d("FluxAPI", "Received fetchQueue responseBody: $responseBody")
-            val queue = Json.decodeFromString<QueueResponse>(responseBody)
+            val queue = ComfyJson.decodeFromString<QueueResponse>(responseBody)
             Log.d("FluxAPI", "call fetchQueue queue: $queue")
 
             queue.normalize()
@@ -361,7 +369,7 @@ class FluxAPI {
 
     private fun JsonElement.toQueueItem(): Queue.Item {
 
-        val workflow = Json.decodeFromString<Workflow>(this.jsonArray[2].toString())
+        val workflow = ComfyJson.decodeFromString<Workflow>(this.jsonArray[2].toString())
 
         val prompt = workflow.getPrompt()
         val id = this.jsonArray[1].toString().replace("\"", "")
@@ -418,7 +426,7 @@ class FluxAPI {
 
     private fun HistoryResponse.normalize(): HistoryItem {
 
-        val prompt = Json.decodeFromString<Workflow>(this.prompt[2].toString())
+        val prompt = ComfyJson.decodeFromString<Workflow>(this.prompt[2].toString())
 
         return HistoryItem(
             images = this.outputs.values.flatMap {

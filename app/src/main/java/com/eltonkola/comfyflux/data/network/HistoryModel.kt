@@ -12,7 +12,7 @@ data class HistoryResponse(
 
     @Serializable
     data class Output(
-        val images: List<Image>
+        val images: List<Image> = emptyList()
     )
 
     @Serializable

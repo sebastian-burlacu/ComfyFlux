@@ -1,5 +1,6 @@
 package com.eltonkola.comfyflux.data.model
 
+import com.eltonkola.comfyflux.data.network.ComfyJson
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -43,7 +44,7 @@ object WorkflowSerializer : KSerializer<Workflow> {
         val jsonObject = jsonDecoder.decodeJsonElement().jsonObject
         return Workflow().apply {
             putAll(jsonObject.mapValues { (_, value) ->
-                Json.decodeFromJsonElement<Node<JsonElement>>(value)
+                ComfyJson.decodeFromJsonElement<Node<JsonElement>>(value)
             })
         }
     }
@@ -69,7 +70,7 @@ data class Node<T>(
     @SerialName("class_type")
     val classType: String,
     @SerialName("_meta")
-    val meta: Meta
+    val meta: Meta = Meta("")
 )
 
 @Serializable

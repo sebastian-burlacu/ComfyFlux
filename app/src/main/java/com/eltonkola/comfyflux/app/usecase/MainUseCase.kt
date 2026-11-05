@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.SerializationException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -109,6 +110,8 @@ class MainUseCase(
             "Connection refused. Is ComfyUI started with --listen, and is the port correct (default 8188)?"
         is SocketTimeoutException, is TimeoutCancellationException ->
             "The server did not answer in time."
+        is SerializationException ->
+            "Server responded, but with unexpected data. Please report (new ComfyUI version?)."
         is IllegalArgumentException ->
             "Invalid URL. Use the format http://<ip>:8188."
         else -> "${e.javaClass.simpleName}: ${e.message ?: "connection failed"}"
