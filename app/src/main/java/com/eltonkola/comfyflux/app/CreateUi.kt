@@ -31,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,6 +44,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -262,10 +265,18 @@ fun PromptTab(
     viewModel: MainViewModel
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.setInputImage(it.toString()) }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Side insets like the other sections; the bottom inset keeps
+            // the recent-prompt chips clear of the floating History/Create bar.
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp)
             .verticalScroll(rememberScrollState())
     ) {
         TextField(
@@ -284,9 +295,8 @@ fun PromptTab(
             keyboardActions = KeyboardActions(
                 onDone = {
                     keyboardController?.hide()
-                    if (!progressUiState.executing) {
-                        viewModel.generateImages()
-                    }
+                    // While a job runs this queues another one behind it.
+                    viewModel.generateImages()
                 }
             ),
             leadingIcon = {
@@ -401,6 +411,49 @@ fun PromptTab(
                         )
                     }
                 }
+            )
+        }
+
+        // img2img: workflows with a LoadImage node take a photo from the
+        // phone; it is uploaded to the server on Create and written into
+        // the node automatically.
+        if (uiState.supportsImageInput) {
+            Row(
+                modifier = Modifier.padding(top = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = { imagePicker.launch("image/*") }) {
+                    Icon(
+                        imageVector = Ikona.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Text(
+                        text = if (uiState.inputImageName.isBlank()) "Choose input image"
+                        else if (uiState.inputImageName.length > 24) uiState.inputImageName.take(24) + "…"
+                        else uiState.inputImageName,
+                        fontSize = 13.sp
+                    )
+                }
+                if (uiState.inputImageUri.isNotEmpty()) {
+                    HelpIconButton(
+                        onClick = { viewModel.setInputImage("") },
+                        imageVector = Ikona.Clean,
+                        size = 34.dp,
+                        iconSize = 18.dp,
+                        help = "Remove the input image"
+                    )
+                }
+            }
+            Text(
+                text = if (uiState.inputImageUri.isNotEmpty())
+                    "Uploaded to the server when you tap Create; the workflow's image node uses it."
+                else "This workflow loads an image - pick one for img2img, or leave unset to use the file saved in the workflow.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
 
