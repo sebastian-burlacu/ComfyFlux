@@ -24,8 +24,10 @@ jobs:
 
       # ubuntu-latest ships a licensed Android SDK; setup-android@v3 was
       # failing on current runner images and provides nothing extra.
-      - name: Build release APK
-        run: ./gradlew assembleRelease
+      # Tests run before packaging: v1.26 shipped a "fix" that a commit
+      # never contained, and nothing in CI would have noticed.
+      - name: Test + build release APK
+        run: ./gradlew testDebugUnitTest assembleRelease
 
       # The fork carries a committed throwaway test keystore (keystore/
       # comfyflux-test.jks); replace it before any real release. The release
