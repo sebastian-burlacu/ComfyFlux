@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -83,33 +86,48 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(it)
-                .padding(16.dp),
+                .padding(16.dp)
+                // The screen outgrew one viewport when the enrichment fields
+                // were added; without this the bottom half (and the logs
+                // button) was unreachable.
+                .verticalScroll(rememberScrollState()),
         ) {
 
-            Text(
-                text = "System theme: ${if (uiState.system) "On" else "Off"}",
-                fontSize = 20.sp
-            )
-            Switch(
-                checked = uiState.system,
-                onCheckedChange = {
-                    viewModel.updateSystemTheme(it)
-                }
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            if (!uiState.system) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "System theme: ${if (uiState.system) "On" else "Off"}",
+                    fontSize = 20.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = uiState.system,
+                    onCheckedChange = {
+                        viewModel.updateSystemTheme(it)
+                    }
+                )
+                // Always visible; only meaningful when the app picks its
+                // own theme instead of following Android.
                 Text(
                     text = "Dark Mode: ${if (uiState.dark) "On" else "Off"}",
-                    fontSize = 20.sp
+                    fontSize = 20.sp,
+                    color = if (uiState.system)
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    else
+                        MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
                 )
                 Switch(
                     checked = uiState.dark,
+                    enabled = !uiState.system,
                     onCheckedChange = {
                         viewModel.updateDarkTheme(it)
                     }
                 )
-                Spacer(modifier = Modifier.height(16.dp))
             }
+            Spacer(modifier = Modifier.height(16.dp))
 
             //dynamic colors are on android 12+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -161,20 +179,56 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Prompt enrichment (Groq) API key",
+                text = "Prompt enrichment API key",
                 fontSize = 20.sp
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Optional. The magic wand in the prompt field expands short prompts using Groq's free AI API. Get a key at console.groq.com and paste it here.",
+                text = "Used when the enrichment endpoint needs a key (Groq by default). The magic wand in the prompt field expands short prompts; nothing is sent until you press it. Free key: console.groq.com.",
                 fontSize = 16.sp
             )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TextField(
+                label = {
+                    Text(text = "API KEY")
+                },
+                supportingText = {
+                    Text(text = "Leave empty to keep prompt enrichment off.")
+                },
+                value = uiState.grqApiKey,
+                onValueChange = {
+                    viewModel.setGrqApiKey(it)
+                },
+                readOnly = true,
+                maxLines = 2,
+                textStyle = TextStyle(fontSize = 10.sp),
+                modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    HelpIconButton(
+                        onClick = {
+                            clipboardManager.getText()?.let {
+                                viewModel.setGrqApiKey(it.text)
+                            }
+                        },
+                        imageVector = Ikona.Paste,
+                        help = "Paste the API key from the clipboard"
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Ikona.Key,
+                        contentDescription = "Key",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "Enrichment endpoint & model",
-                fontSize = 20.sp,
-                modifier = Modifier.padding(top = 16.dp)
+                fontSize = 20.sp
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -212,42 +266,6 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            TextField(
-                label = {
-                    Text(text = "GROQ API KEY")
-                },
-                supportingText = {
-                    Text(text = "Leave empty to keep prompt enrichment off.")
-                },
-                value = uiState.grqApiKey,
-                onValueChange = {
-                    viewModel.setGrqApiKey(it)
-                },
-                readOnly = true,
-                maxLines = 2,
-                textStyle = TextStyle(fontSize = 10.sp),
-                modifier = Modifier.fillMaxWidth(),
-                trailingIcon = {
-                    HelpIconButton(
-                        onClick = {
-                            clipboardManager.getText()?.let {
-                                viewModel.setGrqApiKey(it.text)
-                            }
-                        },
-                        imageVector = Ikona.Paste,
-                        help = "Paste the API key from the clipboard"
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Ikona.Key,
-                        contentDescription = "Key",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            )
-
-
             Spacer(modifier = Modifier.height(16.dp))
 
             val logStore: LogStore = koinInject()
@@ -256,11 +274,8 @@ fun SettingsScreen(
                 Text(text = if (logCount.isEmpty()) "View logs" else "View logs (${logCount.size})")
             }
 
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            )
+            // (no weight spacer inside a scrolling column)
+            Spacer(modifier = Modifier.height(24.dp))
             val context = LocalContext.current
             Column(
                 modifier = Modifier.fillMaxWidth(),
