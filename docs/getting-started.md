@@ -77,8 +77,17 @@ Two sources, picked from the drawer on the Create screen:
    can list (checkpoints, UNETs, LoRAs, VAEs, CLIPs, ControlNets), a dropdown
    appears for each — the same "pick your safetensors" step as in the web UI,
    without the graph. Options come live from the server; selections reset
-   when you switch workflows.
-6. Hit **Create**. Progress, current node and queue position show live;
+   when you switch workflows. A LoRA that has a strength widget gets a slider
+   right under its dropdown (model strength, and CLIP strength when the node
+   has one), so "this LoRA at 0.4" is one thumb-move instead of a graph edit;
+   leaving it alone keeps the workflow's value and *Use the workflow's ...
+   strength* puts it back.
+6. **Prompt presets** (Prompt tab, under the prompt box): save the prompt you
+   just wrote with a name and comma-separated tags, star the keepers, and tap
+   **Apply** to drop any of them into the prompt box. Search covers name,
+   text and tags; the tag chips filter. Presets live on the phone, so they
+   work with any workflow and survive server restarts.
+7. Hit **Create**. Progress, current node and queue position show live;
    while sampling runs the preview grid shows the **live latent preview**
    streamed from the server (ComfyUI 0.43+). An ongoing notification tracks
    the run, so the generation keeps going (and stays visible) when you leave
@@ -91,6 +100,17 @@ images accumulate in one grid. While something is running, **Stop** appears
 above Create — that interrupts only the current job, queued ones keep going.
 When jobs are pending, **Clear queue** appears above History and drops every
 queued job without touching the running one.
+
+Marking runs on the History tab: **☆ keep** / **✕ discard** on a row are marks
+on the *phone* (ComfyUI has no such thing, and nothing is sent to the server).
+The chips above the list then show All / Kept / Discarded / Unmarked with
+counts, and **Delete N discarded** deletes those runs on the server in one go,
+after asking first. Marks are per device and are forgotten for runs that leave
+the server history.
+
+The gallery is cached: the first view of an output downloads it, every later
+view (history list, batch grid, viewer) reads from the local image cache, and
+opening the viewer warms the two images on each side so swiping is instant.
 
 Rerunning a past generation: History tab → the refresh icon on a row re-queues
 it with its exact original settings. The **Settings** button on a row shows
