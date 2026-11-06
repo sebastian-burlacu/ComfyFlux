@@ -11,8 +11,9 @@ ComfyUI speaks two JSON shapes, and they are *not* interchangeable:
 Bundled workflows in the app are API format and are used as-is. Server
 workflows are UI format; the app converts them at run time: it expands the
 link graph into API inputs, flattens subgraph nodes, and assigns stable node
-ids. If you export via *Save (Export)* instead of the normal save, the app
-recognises API format and skips conversion.
+ids. Local workflow files (the folder picker) go through the same
+conversion, so a JSON you downloaded from the web works as-is - the app
+recognises API format and skips conversion for those.
 
 ## What the app patches into a workflow before running it
 
