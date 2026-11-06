@@ -45,7 +45,10 @@ data class ProgressGenerationUIState(
     val error: String = "",
     val executing: Boolean = false,
     val allNodes: List<String> = emptyList(),
-    val remainingNodes: List<String> = emptyList()
+    val remainingNodes: List<String> = emptyList(),
+    // Live latent preview (android.graphics.Bitmap) decoded from the WS
+    // binary preview frames; Any? so this state stays JVM-testable.
+    val previewImage: Any? = null
 ) {
     fun totalProgress(): Float {
         if (allNodes.isEmpty()) return 0f

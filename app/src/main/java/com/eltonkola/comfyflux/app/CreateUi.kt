@@ -176,6 +176,14 @@ fun CreateUi(
                         )
                         navController.navigate(AppScreens.ImageViewer.screenName)
                     }
+                } else if (progressUiState.previewImage != null) {
+                    // Live latent preview straight off the websocket.
+                    AsyncImage(
+                        model = progressUiState.previewImage,
+                        contentDescription = "Live preview",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 } else {
                     Icon(
                         imageVector = Ikona.Image,

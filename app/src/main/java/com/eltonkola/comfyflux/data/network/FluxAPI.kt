@@ -35,6 +35,7 @@ import io.ktor.http.Headers
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.websocket.Frame
+import io.ktor.websocket.readBytes
 import io.ktor.websocket.readText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -470,6 +471,12 @@ class FluxAPI(private val logStore: LogStore) {
                 path = "/ws?clientId=$clientId"
             ) {
                 logStore.debug("client", "websocket connected")
+                // Must be the FIRST message on the socket: ComfyUI only then
+                // streams live latent previews as binary WS frames
+                // (PREVIEW_IMAGE_WITH_METADATA) during sampling.
+                outgoing.send(
+                    Frame.Text("""{"type":"feature_flags","data":{"supports_preview_metadata":true}}""")
+                )
                 // The timeout now guards each incoming message, not the whole
                 // session: every job resets it (active jobs always produce
                 // progress frames), so a long queue is fine but a stuck job
@@ -489,6 +496,14 @@ class FluxAPI(private val logStore: LogStore) {
                         break
                     }
                     val frame = frameResult.getOrNull() ?: continue
+                    if (frame is Frame.Binary) {
+                        parsePreviewImageBytes(frame.readBytes())?.let { imgBytes ->
+                            android.graphics.BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.size)?.let { bmp ->
+                                _progressUiState.update { it.copy(previewImage = bmp) }
+                            }
+                        }
+                        continue
+                    }
                     if (frame !is Frame.Text) continue
                     val messageText = frame.readText()
 
@@ -545,6 +560,7 @@ class FluxAPI(private val logStore: LogStore) {
             is WSMessage.ExecutionStartMessage -> _progressUiState.update {
                 it.copy(
                     promptId = message.promptId,
+                    previewImage = null,
                     statusMessage = "Execution started",
                     // Fresh job: don't leave an earlier failure hanging on
                     // the screen while the queue keeps running.
@@ -555,6 +571,12 @@ class FluxAPI(private val logStore: LogStore) {
                 handleExecutionCachedMessage(message)
             is WSMessage.ExecutingMessage -> _progressUiState.value = handleExecutingMessage(message)
             is WSMessage.ProgressMessage -> _progressUiState.value = handleProgressMessage(message)
+            is WSMessage.ProgressStateMessage -> {
+                val active = message.active()
+                if (active != null) {
+                    _progressUiState.update { it.copy(progress = active.value, maxProgress = active.max) }
+                }
+            }
             is WSMessage.ExecutedMessage -> _progressUiState.value = handleExecutedMessage(message)
             is WSMessage.ExecutionSuccessMessage -> {
                 val moreJobs = !settlement.settle(message.promptId)
@@ -812,4 +834,25 @@ class FluxAPI(private val logStore: LogStore) {
 
 fun String.cleanHistoryPrompt(): String {
     return this.trim('"').trim('\\').removePrefix("\"")
+}
+
+/**
+ * Decode a ComfyUI WS binary preview frame to raw image bytes, or null.
+ * Frames are big-endian: [u32 event][payload]. event 1 = PREVIEW_IMAGE
+ * ([u32 type: 1 JPEG, 2 PNG][bytes]); event 4 = PREVIEW_IMAGE_WITH_METADATA
+ * ([u32 metadataLen][metadata JSON][bytes]).
+ */
+internal fun parsePreviewImageBytes(bytes: ByteArray): ByteArray? {
+    if (bytes.size < 8) return null
+    val bb = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.BIG_ENDIAN)
+    val offset = when (bb.int) {
+        1 -> 8
+        4 -> {
+            val metaLen = bb.int
+            if (metaLen < 0 || 8 + metaLen > bytes.size) return null
+            8 + metaLen
+        }
+        else -> return null
+    }
+    return if (offset < bytes.size) bytes.copyOfRange(offset, bytes.size) else null
 }

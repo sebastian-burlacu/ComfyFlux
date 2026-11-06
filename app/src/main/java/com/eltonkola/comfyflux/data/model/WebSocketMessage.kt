@@ -59,6 +59,25 @@ sealed class WSMessage {
         val node: String
     ) : WSMessage()
 
+    /**
+     * ComfyUI 0.43+ replaced the single-node "progress" event with a map of
+     * every active node's state, sent as "progress_state".
+     */
+    @Serializable
+    data class ProgressStateMessage(
+        @SerialName("prompt_id")
+        override val promptId: String,
+        val nodes: Map<String, NodeProgress> = emptyMap()
+    ) : WSMessage() {
+        @Serializable
+        data class NodeProgress(val value: Int, val max: Int, val state: String)
+
+        /** The node furthest along - what the progress bar should follow. */
+        fun active(): NodeProgress? =
+            nodes.values.filter { it.state != "Pending" && it.max > 0 }
+                .maxByOrNull { it.value.toFloat() / it.max }
+    }
+
     @Serializable
     data class ExecutedMessage(
         @SerialName("prompt_id")
@@ -144,6 +163,7 @@ sealed class WSMessage {
                 "execution_cached" -> json.decodeFromString<ExecutionCachedMessage>(data)
                 "executing" -> json.decodeFromString<ExecutingMessage>(data)
                 "progress" -> json.decodeFromString<ProgressMessage>(data)
+                "progress_state" -> json.decodeFromString<ProgressStateMessage>(data)
                 "executed" -> json.decodeFromString<ExecutedMessage>(data)
                 "execution_success" -> json.decodeFromString<ExecutionSuccessMessage>(data)
                 "execution_error" -> json.decodeFromString<ExecutionErrorMessage>(data)
