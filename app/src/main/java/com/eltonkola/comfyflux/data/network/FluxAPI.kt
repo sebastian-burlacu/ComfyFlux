@@ -179,6 +179,9 @@ fun workflowContentPath(name: String): String {
     return "userdata/workflows%2F" + java.net.URLEncoder.encode(file, "UTF-8").replace("+", "%20")
 }
 
+/** Like [workflowContentPath] but for the POST that saves a workflow. */
+fun workflowWritePath(name: String): String = workflowContentPath(name)
+
 /** Non-2xx answer from the ComfyUI server, carrying the server's own error body. */
 class ComfyServerException(
     val status: Int,
@@ -789,12 +792,14 @@ class FluxAPI(private val logStore: LogStore) {
      * Write a workflow file into the server's saved-workflow folder
      * (POST /userdata/workflows/<name>, raw body - ComfyUI's own save
      * path). The file shows up in the web UI and our Server Workflows list.
+     * The slash after "workflows" must stay URL-encoded: the server's
+     * route is /userdata/{file} and aiohttp's {file} never matches a bare
+     * '/'. (A plain slash reaches the /userdata route instead ->
+     * 405 Method Not Allowed.)
      */
     suspend fun saveUserWorkflow(fileName: String, content: String): String =
         withContext(Dispatchers.IO) {
-            val encoded = java.net.URLEncoder.encode(fileName, "UTF-8")
-            logStore.debug("client", "POST /userdata/workflows/$fileName (${content.length} chars)")
-            val response = client.post("$serverAddress/userdata/workflows/$encoded") {
+            val response = client.post("$serverAddress/${workflowWritePath(fileName)}") {
                 contentType(ContentType.Application.Json)
                 setBody(content)
             }
