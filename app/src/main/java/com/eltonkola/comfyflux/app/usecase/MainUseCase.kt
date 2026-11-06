@@ -57,6 +57,19 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import kotlin.random.Random
 
+/** Fit an image's aspect inside [cap] px, multiples of 32, 256 minimum. */
+internal fun fittedSize(imgW: Int, imgH: Int, cap: Int = 1024): Pair<Int, Int> {
+    // Nearest multiple of 32 (truncating would shrink portrait sizes by
+    // one 32-block); never below 256.
+    val round32: (Int) -> Int = { v -> (((v + 16) / 32) * 32).coerceAtLeast(256) }
+    // Portrait: cap the height, scale the width (and vice versa).
+    return if (imgH >= imgW) {
+        round32(cap * imgW / imgH) to cap
+    } else {
+        cap to round32(cap * imgH / imgW)
+    }
+}
+
 class MainUseCase(
     private val fluxAPI: FluxAPI,
     private val groqAPI: GroqAPI,
@@ -179,6 +192,31 @@ class MainUseCase(
     fun randomSeed() {
         _uiState.update { it.copy(seed = generateRandom16DigitNumber()) }
         saveDraft()
+    }
+
+    /**
+     * Match the size sliders to the picked photo's aspect ratio (fit inside
+     * 1024, multiples of 32). Edit workflows generate at the latent size:
+     * 1024x1024 for a portrait photo crops the reference - the model can
+     * only fill the latent - which reads as "it just cropped my image".
+     */
+    suspend fun adaptSizeToInputImage(uriString: String) {
+        val uri = android.net.Uri.parse(uriString)
+        val dims = withContext(Dispatchers.IO) {
+            val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            runCatching {
+                applicationContext.contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, opts)
+                }
+            }.getOrNull()
+            opts.outWidth to opts.outHeight
+        }
+        val (imgW, imgH) = dims
+        if (imgW <= 0 || imgH <= 0) return
+        val (w, h) = fittedSize(imgW, imgH)
+        _uiState.update { it.copy(width = w, height = h) }
+        saveDraft()
+        logStore.info("client", "input image ${imgW}x${imgH}: size set to ${w}x${h}")
     }
 
     /** Remembered only for this app session; content permissions don't survive restarts. */
@@ -415,8 +453,13 @@ class MainUseCase(
     /** Raw graph JSON of the selected workflow; null when it is not graph format. */
     private suspend fun fetchRawGraph(): JsonObject? {
         val workflowConfig = _uiState.value.workflow
-        if (!workflowConfig.isServer) return null
-        val raw = fluxAPI.fetchWorkflowContent(workflowConfig.name)
+        val raw = if (workflowConfig.isServer) {
+            fluxAPI.fetchWorkflowContent(workflowConfig.name)
+        } else {
+            // Downloaded workflows (web UI exports) are graph format just
+            // like the server's own files; they need the same conversion.
+            applicationContext.getWorkflowAsText(workflowConfig) ?: return null
+        }
         val element = try {
             ComfyJson.parseToJsonElement(raw)
         } catch (e: kotlinx.serialization.SerializationException) {
