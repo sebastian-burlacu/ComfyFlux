@@ -1,6 +1,5 @@
 package com.eltonkola.comfyflux.app.usecase
 
-import android.util.Log
 import com.eltonkola.comfyflux.data.model.QueueUiState
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +19,6 @@ class QueueUseCase(
         }
         try {
             val queue = fluxAPI.fetchQueue()
-            Log.d("HistoryQueueViewModel", "queue pending: ${queue.pending.size}")
             _queueUiState.update { it.copy(loading = false, queue = queue, error = false) }
         } catch (e: Exception) {
             _queueUiState.update { it.copy(loading = false, error = true) }

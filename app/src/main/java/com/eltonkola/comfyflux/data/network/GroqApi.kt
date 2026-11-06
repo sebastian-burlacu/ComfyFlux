@@ -1,6 +1,5 @@
 package com.eltonkola.comfyflux.data.network
 
-import android.util.Log
 import com.eltonkola.comfyflux.BuildConfig
 import com.eltonkola.comfyflux.data.AppSettings
 import io.ktor.client.HttpClient
@@ -122,7 +121,6 @@ class GroqAPI(private val appSettings: AppSettings) {
         val model = settings.enhanceModel.ifBlank { DEFAULT_MODEL }
 
         // Never log the API key (it used to be written to logcat).
-        Log.d("GrowAPI", "enrichPrompt via $endpoint model=$model, prompt length: ${initialPrompt.length}")
         val url = endpoint.trimEnd('/') + "/chat/completions"
 
         val requestBody = RequestBody(
@@ -158,7 +156,6 @@ class GroqAPI(private val appSettings: AppSettings) {
         }
 
         val responseBody = response.bodyAsText()
-        Log.d("GrowAPI", "enrichPrompt status: ${response.status}")
 
         val apiResponse = try {
             Json.decodeFromString<ApiResponse>(responseBody)

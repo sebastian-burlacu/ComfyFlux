@@ -1,6 +1,5 @@
 package com.eltonkola.comfyflux.app.usecase
 
-import android.util.Log
 import com.eltonkola.comfyflux.data.model.HistoryUiState
 import com.eltonkola.comfyflux.data.network.FluxAPI
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +21,6 @@ class HistoryUseCase(
         }
         try {
             val history = fluxAPI.fetchHistory()
-            Log.d("HistoryQueueViewModel", "history: ${history.size}")
             _historyUiState.update {
                 it.copy(
                     loading = false,

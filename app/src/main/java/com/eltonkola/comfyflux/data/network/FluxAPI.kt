@@ -318,7 +318,6 @@ class FluxAPI(private val logStore: LogStore) {
     private suspend fun queuePrompt(promptRequest: PromptRequest): String = traced("POST /prompt") {
         val prompt = Json.encodeToString(promptRequest)
 
-        Log.d("FluxAPI", "Sending prompt: $prompt")
         logStore.debug("client", "POST /prompt body ${prompt.length} chars, ${promptRequest.prompt.size} nodes")
         logStore.trace("client", "POST /prompt full request: $prompt")
         val response = client.post("$serverAddress/prompt") {
@@ -326,7 +325,6 @@ class FluxAPI(private val logStore: LogStore) {
             setBody(prompt)
         }
         val responseBody = response.bodyAsText()
-        Log.d("FluxAPI", "Received response: $responseBody")
         val jsonResponse = decodeBody<QueuePromptResponse>(responseBody, "/prompt", response.status.value)
         val promptId = jsonResponse.prompt_id
         if (promptId.isNullOrEmpty()) {
@@ -426,7 +424,6 @@ class FluxAPI(private val logStore: LogStore) {
 
     suspend fun generateImage(prompt: PromptRequest) {
         val promptId = queuePrompt(prompt)
-        Log.d("FluxAPI", "Requested prompt: $promptId")
 
         var ownsSession: Boolean
         synchronized(settlement) {
@@ -494,10 +491,8 @@ class FluxAPI(private val logStore: LogStore) {
                     val frame = frameResult.getOrNull() ?: continue
                     if (frame !is Frame.Text) continue
                     val messageText = frame.readText()
-                    Log.d("FluxAPI", "Received websocket raw: $messageText")
 
                     val wsMessage = WSMessage.fromJson(messageText)
-                    Log.d("FluxAPI", "Received ws message: $wsMessage")
                     logStore.debug(
                         "client",
                         "ws event: ${wsMessage.javaClass.simpleName}" +
@@ -609,12 +604,10 @@ class FluxAPI(private val logStore: LogStore) {
     }
 
     suspend fun checkSystemStats(): SystemStats = traced("/system_stats") {
-        Log.d("FluxAPI", "call checkSystemStats")
         val response = client.get("$serverAddress/system_stats") {
             contentType(ContentType.Application.Json)
         }
         val responseBody = response.bodyAsText()
-        Log.d("FluxAPI", "Received response: $responseBody")
         decodeBody<SystemStats>(responseBody, "/system_stats", response.status.value)
     }
 
@@ -623,11 +616,9 @@ class FluxAPI(private val logStore: LogStore) {
             val response = client.get("$serverAddress/history")
             val responseBody = response.bodyAsText()
 
-            Log.d("FluxAPI", "Received fetchHistory responseBody: $responseBody")
             val history = decodeBody<Map<String, HistoryResponse>>(responseBody, "/history", response.status.value)
-            Log.d("FluxAPI", "call fetchHistory history: $history")
 
-            history.values.map { it.normalize() }
+            history.values.mapNotNull { it.normalizeOrNull() }
         }
     }
 
@@ -636,31 +627,30 @@ class FluxAPI(private val logStore: LogStore) {
             val response = client.get("$serverAddress/queue")
             val responseBody = response.bodyAsText()
 
-            Log.d("FluxAPI", "Received fetchQueue responseBody: $responseBody")
             val queue = decodeBody<QueueResponse>(responseBody, "/queue", response.status.value)
-            Log.d("FluxAPI", "call fetchQueue queue: $queue")
 
             queue.normalize()
         }
     }
 
     private fun QueueResponse.normalize(): Queue {
-        Log.d("FluxAPI", "call QueueResponse normalize: $this")
 
         return Queue(
-            running = this.queue_running.map { it.toQueueItem() },
-            pending = this.queue_pending.map { it.toQueueItem() }
+            running = this.queue_running.mapNotNull { it.toQueueItem() },
+            pending = this.queue_pending.mapNotNull { it.toQueueItem() }
         )
     }
 
-    private fun JsonElement.toQueueItem(): Queue.Item {
-
-        val workflow = ComfyJson.decodeFromString<Workflow>(this.jsonArray[2].toString())
-
+    private fun JsonElement.toQueueItem(): Queue.Item? {
+        // Same positional-array guard as history normalisation: one odd
+        // entry must not take down the whole queue view.
+        val arr = this as? JsonArray ?: return null
+        val id = (arr.getOrNull(1) as? JsonPrimitive)?.contentOrNull ?: return null
+        val promptJson = arr.getOrNull(2)?.toString() ?: return null
+        val workflow = runCatching { ComfyJson.decodeFromString<Workflow>(promptJson) }.getOrNull()
+            ?: return null
         val prompt = workflow.getPrompt()
-        val id = this.jsonArray[1].toString().replace("\"", "")
 
-        Log.d("FluxAPI", "call toQueueItem: $this")
 
 
         return Queue.Item(
@@ -683,8 +673,6 @@ class FluxAPI(private val logStore: LogStore) {
             }
             val responseBody = response.bodyAsText()
 
-            Log.d("FluxAPI", "Received deleteHistory: $deleteBody")
-            Log.d("FluxAPI", "Received delete history: $responseBody")
             Unit
         }
     }
@@ -704,17 +692,19 @@ class FluxAPI(private val logStore: LogStore) {
             }
             val responseBody = response.bodyAsText()
 
-            Log.d("FluxAPI", "Received deleteBody: $deleteBody")
 
-            Log.d("FluxAPI", "Received delete workflow: $responseBody")
             Unit
         }
     }
 
 
-    private fun HistoryResponse.normalize(): HistoryItem {
-
-        val prompt = ComfyJson.decodeFromString<Workflow>(this.prompt[2].toString())
+    private fun HistoryResponse.normalizeOrNull(): HistoryItem? {
+        // Positional LiteGraph arrays: [prompt_id?, prompt, extra]. A shape
+        // change on the server must drop THIS entry, not kill the whole
+        // history list with one IndexOutOfBounds.
+        val promptJson = this.prompt.getOrNull(2)?.toString() ?: return null
+        val prompt = runCatching { ComfyJson.decodeFromString<Workflow>(promptJson) }.getOrNull()
+            ?: return null
 
         return HistoryItem(
             images = this.outputs.values.flatMap {
@@ -724,7 +714,7 @@ class FluxAPI(private val logStore: LogStore) {
             success = this.status.status_str == "success",
             completed = this.status.completed,
             prompt = prompt,
-            id = this.prompt[1].toString().cleanHistoryPrompt()
+            id = this.prompt.getOrNull(1).toString().cleanHistoryPrompt()
         )
     }
 
@@ -740,7 +730,6 @@ class FluxAPI(private val logStore: LogStore) {
             }
             val responseBody = response.bodyAsText()
 
-            Log.d("FluxAPI", "Received clear queue: $responseBody")
         }
     }
 
@@ -748,7 +737,6 @@ class FluxAPI(private val logStore: LogStore) {
         withContext(Dispatchers.IO) {
             val response = client.post("$serverAddress/interrupt")
             val responseBody = response.bodyAsText()
-            Log.d("FluxAPI", "Received interrupt: $responseBody")
         }
     }
 

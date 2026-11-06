@@ -3,7 +3,6 @@ package com.eltonkola.comfyflux.app.workflows
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -101,7 +100,6 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
 
     fun loadFiles(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
-            Log.d("FolderViewModel", "Loading files from URI: $uri")
 
             // Take persistent permission immediately
             val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -112,21 +110,18 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
             )
 
             if (checkPermission(uri)) {
-                Log.d("FolderViewModel", "Permission granted for URI: $uri")
                 val documentsTree = DocumentFile.fromTreeUri(getApplication(), uri)
                 // Only actual JSON workflow files show up; folders and other
                 // files in there would just fail to load anyway.
                 val fileList = documentsTree?.listFiles()
                     ?.filter { it.isFile && it.name?.endsWith(".json", ignoreCase = true) == true }
                     ?.toList() ?: emptyList()
-                Log.d("FolderViewModel", "Found ${fileList.size} workflow files")
                 _files.value = fileList.map { it.normalize() }
                 _selectedFolder.value = uri
                 _hasPermission.value = true
                 rememberFolderName(uri)
                 saveSelectedFolderUri(uri)
             } else {
-                Log.d("FolderViewModel", "Permission denied for URI: $uri")
                 _hasPermission.value = false
                 _selectedFolder.value = null
                 _files.value = emptyList()
@@ -164,7 +159,6 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
     private fun checkPermission(uri: Uri): Boolean {
         val list = getApplication<Application>().contentResolver.persistedUriPermissions
         val hasPermission = list.any { it.uri == uri && it.isReadPermission }
-        Log.d("FolderViewModel", "Checking permission for URI: $uri, result: $hasPermission")
         return hasPermission
     }
 

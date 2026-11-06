@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.util.Log
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.AppState
 import com.eltonkola.comfyflux.data.GenerationDraft
@@ -18,7 +17,10 @@ import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
 import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
-import com.eltonkola.comfyflux.data.model.applyInputImage
+import com.eltonkola.comfyflux.data.model.ImagePick
+import com.eltonkola.comfyflux.data.model.applyInputImages
+import com.eltonkola.comfyflux.data.model.imageInputs
+import com.eltonkola.comfyflux.data.model.needs
 import com.eltonkola.comfyflux.data.model.applyModelOverrides
 import com.eltonkola.comfyflux.data.model.hasImageInput
 import com.eltonkola.comfyflux.data.model.detectModelSlots
@@ -219,17 +221,34 @@ class MainUseCase(
         logStore.info("client", "input image ${imgW}x${imgH}: size set to ${w}x${h}")
     }
 
-    /** Remembered only for this app session; content permissions don't survive restarts. */
-    fun setInputImage(uriString: String) {
+    /**
+     * Assign (or clear, with a blank uri) one photo for one LoadImage slot.
+     * Remembered only for this app session; content permissions don't
+     * survive restarts.
+     */
+    fun setInputImage(slotId: String, uriString: String) {
+        _uiState.update { state ->
+            val picks = state.imagePicks.toMutableMap()
+            if (uriString.isBlank()) picks.remove(slotId) else picks[slotId] =
+                ImagePick(uriString, displayName(android.net.Uri.parse(uriString)))
+            state.copy(imagePicks = picks)
+        }
+        uploadedInputs.remove(uriString)
+        logStore.info("client", if (uriString.isBlank()) "input image cleared ($slotId)"
+        else "input image selected for $slotId")
+    }
+
+    /** Same photo for every LoadImage (workflows whose branches share one input). */
+    fun setAllInputImages(uriString: String) {
         if (uriString.isBlank()) {
-            uploadedInput = null
-            _uiState.update { it.copy(inputImageUri = "", inputImageName = "") }
+            _uiState.update { it.copy(imagePicks = emptyMap()) }
             return
         }
         val name = displayName(android.net.Uri.parse(uriString))
-        uploadedInput = null
-        _uiState.update { it.copy(inputImageUri = uriString, inputImageName = name) }
-        logStore.info("client", "input image selected: $name")
+        _uiState.update { state ->
+            state.copy(imagePicks = state.imageInputs.associate { it.id to ImagePick(uriString, name) })
+        }
+        logStore.info("client", "same photo set for all ${_uiState.value.imagePicks.size} image inputs")
     }
 
     private fun displayName(uri: android.net.Uri): String {
@@ -245,29 +264,29 @@ class MainUseCase(
     }
 
     // uri -> server filename, so tapping Create repeatedly with the same
-    // photo uploads it once.
-    private var uploadedInput: Pair<String, String>? = null
+    // photo uploads it once, even when several slots use it.
+    private val uploadedInputs = mutableMapOf<String, String>()
 
-    /** Upload the selected photo to the server and wire it into LoadImage nodes. */
-    private suspend fun uploadInputImage(prompt: Workflow) {
-        val uriString = _uiState.value.inputImageUri
-        if (uriString.isBlank() || !prompt.hasImageInput()) return
-        val cached = uploadedInput?.takeIf { it.first == uriString }
-        if (cached != null) {
-            prompt.applyInputImage(cached.second)
-            return
-        }
-        val uri = android.net.Uri.parse(uriString)
-        val fileName = _uiState.value.inputImageName.ifBlank { displayName(uri) }
-        val mimeType = applicationContext.contentResolver.getType(uri) ?: "image/jpeg"
-        val bytes = withContext(Dispatchers.IO) {
-            applicationContext.contentResolver.openInputStream(uri)?.readBytes()
-        } ?: throw Exception("Could not read the selected image - pick it again and tap Create")
-        val serverName = withContext(Dispatchers.IO) {
-            fluxAPI.uploadImage(fileName, bytes, mimeType)
-        }
-        uploadedInput = uriString to serverName
-        prompt.applyInputImage(serverName)
+    /** Upload every picked photo and wire each one into its LoadImage node. */
+    private suspend fun uploadInputImages(prompt: Workflow) {
+        val picks = _uiState.value.imagePicks
+        if (picks.isEmpty() || !prompt.hasImageInput()) return
+        val assignments = picks.entries
+            .filter { prompt.containsKey(it.key) }
+            .map { (slotId, pick) ->
+                slotId to uploadedInputs.getOrPut(pick.uri) {
+                    val uri = android.net.Uri.parse(pick.uri)
+                    val mimeType = applicationContext.contentResolver.getType(uri) ?: "image/jpeg"
+                    val bytes = withContext(Dispatchers.IO) {
+                        applicationContext.contentResolver.openInputStream(uri)?.readBytes()
+                    } ?: throw Exception("Could not read ${pick.name} - pick it again and tap Create")
+                    withContext(Dispatchers.IO) {
+                        fluxAPI.uploadImage(pick.name, bytes, mimeType)
+                    }
+                }
+            }
+            .toMap()
+        prompt.applyInputImages(assignments)
     }
 
     suspend fun checkStatus() {
@@ -424,10 +443,13 @@ class MainUseCase(
                     },
                     supportsNegativePrompt = workflow.negativeTextTargets().isNotEmpty(),
                     supportsImageInput = workflow.hasImageInput(),
-                    // A picked photo only makes sense for the workflow it
-                    // was picked for.
-                    inputImageUri = if (workflow.hasImageInput()) state2.inputImageUri else "",
-                    inputImageName = if (workflow.hasImageInput()) state2.inputImageName else ""
+                    workflowNeeds = workflow.needs(),
+                    imageInputs = workflow.imageInputs(),
+                    // Picked photos only make sense for the slots the
+                    // current workflow actually has.
+                    imagePicks = state2.imagePicks.filterKeys { id ->
+                        workflow.hasImageInput() && workflow.containsKey(id)
+                    }
                 )
             }
         }.onFailure { e ->
@@ -543,8 +565,7 @@ class MainUseCase(
         try {
             fluxAPI.setServerAddress(normalizeServerUrl(uiState.value.server))
             val prompt = loadWorkflow()
-            uploadInputImage(prompt.prompt)
-            Log.d("FluxApp", "prompt: $prompt")
+            uploadInputImages(prompt.prompt)
             withContext(Dispatchers.IO) {
                 fluxAPI.generateImage(prompt)
             }
@@ -685,7 +706,6 @@ fun Context.getWorkflowAsText(workflow: WorkflowFile): String? {
             val fileName = workflow.workflowUri.removePrefix("file:///android_asset/")
             assets.open(fileName).bufferedReader().use { it.readText() }
         } else {
-            Log.d("ComfyFlux", "reading file: ${workflow.workflowUri}")
             val uri = Uri.parse(workflow.workflowUri)
             contentResolver.openInputStream(uri)?.bufferedReader().use {
                 it?.readText()
