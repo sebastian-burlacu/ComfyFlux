@@ -30,6 +30,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +47,7 @@ import com.eltonkola.comfyflux.app.AppScreens
 import com.eltonkola.comfyflux.app.MainViewModel
 import com.eltonkola.comfyflux.components.LoadingUi
 import com.eltonkola.comfyflux.data.model.HistoryItem
+import com.eltonkola.comfyflux.data.model.runParams
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Copy
 import com.eltonkola.comfyflux.ui.theme.ikona.Delete
@@ -124,6 +128,9 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
                                 },
                                 onRerun = {
                                     viewModel.rerunFromHistory(row)
+                                },
+                                onUseSettings = {
+                                    viewModel.applyRunSettings(row)
                                 }
                             )
                             Spacer(modifier = Modifier.size(1.dp))
@@ -138,10 +145,46 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
 
 @SuppressLint("SuspiciousIndentation")
 @Composable
-fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDelete: () -> Unit, onRerun: () -> Unit) {
+fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDelete: () -> Unit, onRerun: () -> Unit, onUseSettings: () -> Unit) {
     val clipboardManager = LocalClipboardManager.current
+    var showParams by remember { mutableStateOf(false) }
+    val params = remember(item) { item.prompt.runParams() }
     Column {
-        Text(text = "Nr: ${item.images.size} success: ${item.success} - completed: ${item.completed}")
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(text = "Nr: ${item.images.size} success: ${item.success} - completed: ${item.completed}")
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = { showParams = !showParams }) {
+                Text(
+                    text = if (showParams) "Hide settings" else "Settings",
+                    fontSize = 11.sp
+                )
+            }
+        }
+        if (showParams) {
+            Column(modifier = Modifier.padding(bottom = 4.dp)) {
+                Text(
+                    text = params.summary().ifBlank { "no sampler controls in this workflow" },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                params.models.forEach {
+                    Text(
+                        text = it,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(
+                    onClick = onUseSettings,
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Text("Use these settings on Create", fontSize = 11.sp)
+                }
+            }
+        }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {

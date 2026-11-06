@@ -10,6 +10,7 @@ import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.PromptRepo
 import com.eltonkola.comfyflux.data.SettingsState
 import com.eltonkola.comfyflux.data.model.HistoryItem
+import com.eltonkola.comfyflux.data.model.runParams
 import com.eltonkola.comfyflux.data.model.HistoryUiState
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.ImageViewerUiState
@@ -229,6 +230,10 @@ class MainViewModel(
             mainUseCase.clearQueue()
             loadQueue(showLoading = false)
         }
+    }
+
+    fun applyRunSettings(item: HistoryItem) {
+        mainUseCase.applyRunSettings(item.prompt.runParams())
     }
 
     fun rerunFromHistory(item: HistoryItem) {

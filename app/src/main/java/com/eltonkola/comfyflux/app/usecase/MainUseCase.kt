@@ -20,6 +20,7 @@ import com.eltonkola.comfyflux.data.model.WorkflowFile
 import com.eltonkola.comfyflux.data.model.ImagePick
 import com.eltonkola.comfyflux.data.model.applyInputImages
 import com.eltonkola.comfyflux.data.model.imageInputs
+import com.eltonkola.comfyflux.data.model.RunParams
 import com.eltonkola.comfyflux.data.model.needs
 import com.eltonkola.comfyflux.data.model.applyModelOverrides
 import com.eltonkola.comfyflux.data.model.hasImageInput
@@ -560,6 +561,9 @@ class MainUseCase(
         // refresh and the outcome toast.
         val joiningRunningSession = fluxAPI.progressUiState.value.executing
         if (!joiningRunningSession) {
+            // Foreground service: the notification shows live progress and
+            // keeps the session alive when the app leaves the foreground.
+            com.eltonkola.comfyflux.data.GenerationService.begin(applicationContext)
             start()
         }
         try {
@@ -584,6 +588,19 @@ class MainUseCase(
     }
 
     /** Re-queue a past generation exactly as it ran (server history keeps the full prompt). */
+    /** Prefill the Create sliders from a past run (seed becomes FIXED). */
+    fun applyRunSettings(params: RunParams) {
+        _uiState.update { state ->
+            state.copy(
+                seed = params.seed ?: state.seed,
+                steps = params.steps ?: state.steps,
+                cfg = params.cfg ?: state.cfg
+            )
+        }
+        saveDraft()
+        logStore.info("client", "create settings prefilled from a history run: ${params.summary()}")
+    }
+
     suspend fun rerunImages(item: HistoryItem, start: () -> Unit, stop: () -> Unit) {
         start()
         try {

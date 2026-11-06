@@ -21,7 +21,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -466,6 +468,51 @@ fun Workflow.applyInputImages(assignments: Map<String, String>) {
             replaceInputs(id, mapOf("image" to JsonPrimitive(name)))
         }
     }
+}
+
+/** How a submitted run was configured, read back from its API-format prompt. */
+data class RunParams(
+    val seed: Long?,
+    val steps: Int?,
+    val cfg: Float?,
+    val sampler: String?,
+    val scheduler: String?,
+    val denoise: Float?,
+    val models: List<String>
+) {
+    fun summary(): String = buildList {
+        seed?.let { add("seed $it") }
+        steps?.let { add("$it steps") }
+        cfg?.let { add("cfg ${if (it % 1f == 0f) it.toInt().toString() else it.toString()}") }
+        sampler?.let { add(it) }
+        scheduler?.let { add(it) }
+        denoise?.let { if (it < 1f) add("denoise $it") }
+    }.joinToString(" - ")
+}
+
+fun Workflow.runParams(): RunParams {
+    val sampler = values.firstOrNull { it.classType.contains("KSampler") }
+        ?.inputs?.jsonObject
+    val modelNodes = filterValues {
+        it.classType in setOf(
+            "CheckpointLoaderSimple", "CheckpointLoader", "UNETLoader",
+            "LoraLoader", "LoraLoaderModelOnly", "UnetLoaderGGUF"
+        )
+    }
+    val models = modelNodes.values.mapNotNull { node ->
+        listOf("ckpt_name", "unet_name", "lora_name")
+            .firstNotNullOfOrNull { node.inputs.jsonObject[it]?.jsonPrimitive?.contentOrNull }
+    }
+    return RunParams(
+        seed = sampler?.get("seed")?.jsonPrimitive?.longOrNull,
+        steps = sampler?.get("steps")?.jsonPrimitive?.intOrNull,
+        cfg = sampler?.get("cfg")?.jsonPrimitive?.floatOrNull
+            ?: sampler?.get("cfg_2")?.jsonPrimitive?.floatOrNull,
+        sampler = sampler?.get("sampler_name")?.jsonPrimitive?.contentOrNull,
+        scheduler = sampler?.get("scheduler")?.jsonPrimitive?.contentOrNull,
+        denoise = sampler?.get("denoise")?.jsonPrimitive?.floatOrNull,
+        models = models
+    )
 }
 
 /** What a workflow consumes, for the "This workflow needs" card. */
