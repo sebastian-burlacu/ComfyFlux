@@ -169,6 +169,20 @@ class MainViewModel(
         }
     }
 
+    fun setInputImage(uriString: String) {
+        mainUseCase.setInputImage(uriString)
+    }
+
+    val templateState = mainUseCase.templateState
+
+    fun refreshTemplates(force: Boolean = false) {
+        viewModelScope.launch { mainUseCase.refreshTemplates(force) }
+    }
+
+    fun importTemplate(entry: com.eltonkola.comfyflux.data.network.TemplateEntry) {
+        viewModelScope.launch { mainUseCase.importTemplate(entry) }
+    }
+
     fun randomSeed() {
         mainUseCase.randomSeed()
     }

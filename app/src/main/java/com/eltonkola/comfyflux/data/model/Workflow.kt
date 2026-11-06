@@ -422,3 +422,21 @@ fun Workflow.updateCfgAndSteps(cfg: Float, steps: Int) {
         if (replacements.isNotEmpty()) replaceInputs(id, replacements)
     }
 }
+
+/**
+ * img2img hook: ComfyUI's standard image input node. When the graph has a
+ * LoadImage, the app uploads the phone photo chosen on the Create screen
+ * and writes the server-side filename into it.
+ */
+fun Workflow.hasImageInput(): Boolean = any { it.value.classType == "LoadImage" }
+
+/**
+ * Point every LoadImage at the uploaded file (server name, already
+ * subfolder-prefixed when the server put it in a subfolder).
+ */
+fun Workflow.applyInputImage(name: String) {
+    if (name.isBlank()) return
+    filterValues { it.classType == "LoadImage" }
+        .keys
+        .forEach { id -> replaceInputs(id, mapOf("image" to JsonPrimitive(name))) }
+}

@@ -89,7 +89,22 @@ data class ImageGenerationUiState(
     // Optional user negative; empty keeps whatever the workflow specifies.
     val negativePrompt: String = "",
     val supportsNegativePrompt: Boolean = false,
+    // img2img: workflows with a LoadImage node accept a phone photo; the uri
+    // is session-only (content permissions don't survive restarts).
+    val supportsImageInput: Boolean = false,
+    val inputImageUri: String = "",
+    val inputImageName: String = "",
     val recentPrompts: List<String> = emptyList()
+)
+
+data class TemplateBrowserState(
+    val entries: List<com.eltonkola.comfyflux.data.network.TemplateEntry> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+    // File currently being downloaded/saved, drives the spinner.
+    val importingName: String? = null,
+    // Result of the last import (success with warnings, or failure text).
+    val message: String? = null
 )
 
 data class ImageViewerUiState(

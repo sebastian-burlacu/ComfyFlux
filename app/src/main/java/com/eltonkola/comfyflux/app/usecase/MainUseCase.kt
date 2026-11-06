@@ -3,6 +3,7 @@ package com.eltonkola.comfyflux.app.usecase
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.AppState
@@ -12,11 +13,14 @@ import com.eltonkola.comfyflux.data.Notifier
 import com.eltonkola.comfyflux.data.exceptionChain
 import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
+import com.eltonkola.comfyflux.data.model.TemplateBrowserState
 import com.eltonkola.comfyflux.data.model.PromptRequest
 import com.eltonkola.comfyflux.data.model.Workflow
 import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
+import com.eltonkola.comfyflux.data.model.applyInputImage
 import com.eltonkola.comfyflux.data.model.applyModelOverrides
+import com.eltonkola.comfyflux.data.model.hasImageInput
 import com.eltonkola.comfyflux.data.model.detectModelSlots
 import com.eltonkola.comfyflux.data.model.negativeTextTargets
 import com.eltonkola.comfyflux.data.model.updateNegativePrompt
@@ -28,6 +32,8 @@ import com.eltonkola.comfyflux.data.model.updateSeed
 import com.eltonkola.comfyflux.data.model.updateSizeAndBatch
 import com.eltonkola.comfyflux.data.model.workflows
 import com.eltonkola.comfyflux.data.network.ComfyJson
+import com.eltonkola.comfyflux.data.network.TemplateCatalog
+import com.eltonkola.comfyflux.data.network.TemplateEntry
 import com.eltonkola.comfyflux.data.network.ComfyServerException
 import com.eltonkola.comfyflux.data.network.decodeFailureReason
 import com.eltonkola.comfyflux.data.network.FluxAPI
@@ -44,6 +50,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.SerializationException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -174,6 +181,57 @@ class MainUseCase(
         saveDraft()
     }
 
+    /** Remembered only for this app session; content permissions don't survive restarts. */
+    fun setInputImage(uriString: String) {
+        if (uriString.isBlank()) {
+            uploadedInput = null
+            _uiState.update { it.copy(inputImageUri = "", inputImageName = "") }
+            return
+        }
+        val name = displayName(android.net.Uri.parse(uriString))
+        uploadedInput = null
+        _uiState.update { it.copy(inputImageUri = uriString, inputImageName = name) }
+        logStore.info("client", "input image selected: $name")
+    }
+
+    private fun displayName(uri: android.net.Uri): String {
+        return try {
+            applicationContext.contentResolver
+                .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
+                } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "phone_image.jpg"
+        } catch (e: Exception) {
+            uri.lastPathSegment?.substringAfterLast('/') ?: "phone_image.jpg"
+        }
+    }
+
+    // uri -> server filename, so tapping Create repeatedly with the same
+    // photo uploads it once.
+    private var uploadedInput: Pair<String, String>? = null
+
+    /** Upload the selected photo to the server and wire it into LoadImage nodes. */
+    private suspend fun uploadInputImage(prompt: Workflow) {
+        val uriString = _uiState.value.inputImageUri
+        if (uriString.isBlank() || !prompt.hasImageInput()) return
+        val cached = uploadedInput?.takeIf { it.first == uriString }
+        if (cached != null) {
+            prompt.applyInputImage(cached.second)
+            return
+        }
+        val uri = android.net.Uri.parse(uriString)
+        val fileName = _uiState.value.inputImageName.ifBlank { displayName(uri) }
+        val mimeType = applicationContext.contentResolver.getType(uri) ?: "image/jpeg"
+        val bytes = withContext(Dispatchers.IO) {
+            applicationContext.contentResolver.openInputStream(uri)?.readBytes()
+        } ?: throw Exception("Could not read the selected image - pick it again and tap Create")
+        val serverName = withContext(Dispatchers.IO) {
+            fluxAPI.uploadImage(fileName, bytes, mimeType)
+        }
+        uploadedInput = uriString to serverName
+        prompt.applyInputImage(serverName)
+    }
+
     suspend fun checkStatus() {
         val url = normalizeServerUrl(uiState.value.server)
         _uiState.update { it.copy(loadingStats = true, server = url) }
@@ -226,6 +284,64 @@ class MainUseCase(
 
     private var restoredServerWorkflow = false
 
+    // ---- Comfy-Org template browser -------------------------------------
+
+    private val templateCatalog = TemplateCatalog()
+
+    private val _templateState = MutableStateFlow(TemplateBrowserState())
+    val templateState: StateFlow<TemplateBrowserState> = _templateState.asStateFlow()
+
+    suspend fun refreshTemplates(force: Boolean = false) {
+        if (_templateState.value.loading) return
+        _templateState.update { it.copy(loading = true, error = null) }
+        runCatching { templateCatalog.list(refresh = force) }
+            .onSuccess { entries -> _templateState.update { it.copy(entries = entries, loading = false) } }
+            .onFailure { e ->
+                logStore.warn("client", "template catalog fetch failed: ${e.message}")
+                _templateState.update {
+                    it.copy(loading = false, error = "Couldn't load the template list (${e.message ?: "network"}). Check the phone's internet connection and retry.")
+                }
+            }
+    }
+
+    /** Download a template and save it into the server's workflow folder. */
+    suspend fun importTemplate(entry: TemplateEntry) {
+        if (_templateState.value.importingName != null) return
+        _templateState.update { it.copy(importingName = entry.fileName, error = null, message = null) }
+        try {
+            val raw = templateCatalog.fetchTemplate(entry.downloadUrl)
+            val graph = runCatching { ComfyJson.parseToJsonElement(raw).jsonObject }.getOrNull()
+                ?: throw Exception("The downloaded file is not a workflow graph")
+            if (graph["nodes"] == null) throw Exception("The downloaded graph has no nodes")
+
+            // Warn (don't block) when the server lacks node classes; skip
+            // the check when we're not connected anyway.
+            val missing = if (_uiState.value.stats != null) {
+                TemplateCatalog.missingNodeTypes(raw, fluxAPI.fetchObjectInfo().keys)
+            } else emptyList()
+
+            fluxAPI.saveUserWorkflow(entry.fileName, raw.toString())
+            refreshServerWorkflows()
+            _templateState.update {
+                it.copy(
+                    message = if (missing.isEmpty())
+                        "'${entry.title}' is saved on the server - pick it under Server Workflows."
+                    else
+                        "'${entry.title}' is saved, but these node types are missing on your server: ${missing.take(8).joinToString(", ")}${if (missing.size > 8) "…" else ""}. The workflow won't run until you install them (ComfyUI Manager)."
+                )
+            }
+        } catch (e: Exception) {
+            logStore.error("client", "template import failed (${entry.fileName}): ${e.message}")
+            logStore.debug("client", exceptionChain(e))
+            _templateState.update {
+                it.copy(error = "Importing '${entry.title}' failed: ${e.message ?: "network error"}. " +
+                        "Saving needs a working connection to your ComfyUI server.")
+            }
+        } finally {
+            _templateState.update { it.copy(importingName = null) }
+        }
+    }
+
     // Recomputed only when the server+workflow pair changes or slots were cleared.
     private var slotsKey: String? = null
 
@@ -259,7 +375,12 @@ class MainUseCase(
                     toggleOverrides = state2.toggleOverrides.filterKeys { k ->
                         toggles.any { it.key == k }
                     },
-                    supportsNegativePrompt = workflow.negativeTextTargets().isNotEmpty()
+                    supportsNegativePrompt = workflow.negativeTextTargets().isNotEmpty(),
+                    supportsImageInput = workflow.hasImageInput(),
+                    // A picked photo only makes sense for the workflow it
+                    // was picked for.
+                    inputImageUri = if (workflow.hasImageInput()) state2.inputImageUri else "",
+                    inputImageName = if (workflow.hasImageInput()) state2.inputImageName else ""
                 )
             }
         }.onFailure { e ->
@@ -370,6 +491,7 @@ class MainUseCase(
         try {
             fluxAPI.setServerAddress(normalizeServerUrl(uiState.value.server))
             val prompt = loadWorkflow()
+            uploadInputImage(prompt.prompt)
             Log.d("FluxApp", "prompt: $prompt")
             withContext(Dispatchers.IO) {
                 fluxAPI.generateImage(prompt)

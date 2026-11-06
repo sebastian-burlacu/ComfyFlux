@@ -21,13 +21,18 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
+import io.ktor.http.Headers
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
@@ -738,6 +743,68 @@ class FluxAPI(private val logStore: LogStore) {
             Log.d("FluxAPI", "Received interrupt: $responseBody")
         }
     }
+
+    @Serializable
+    private data class UploadImageResponse(
+        val name: String = "",
+        val subfolder: String = "",
+        val type: String = ""
+    )
+
+    /**
+     * Upload a photo into the server's input folder (POST /upload/image,
+     * multipart) and return the name the graph's LoadImage node needs.
+     * Throws with the server's reason when it refuses.
+     */
+    suspend fun uploadImage(fileName: String, bytes: ByteArray, mimeType: String): String =
+        withContext(Dispatchers.IO) {
+            logStore.debug("client", "POST /upload/image $fileName (${bytes.size} bytes, $mimeType)")
+            val parts = formData {
+                append(
+                    "image",
+                    bytes,
+                    Headers.build {
+                        append(HttpHeaders.ContentType, mimeType)
+                        append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                    }
+                )
+                append("overwrite", "true")
+                append("type", "input")
+            }
+            val response = client.submitFormWithBinaryData(
+                url = "$serverAddress/upload/image",
+                formData = parts
+            )
+            val responseBody = response.bodyAsText()
+            if (!response.status.isSuccess()) {
+                throw Exception("Image upload rejected: HTTP ${response.status.value} ${responseBody.take(200)}")
+            }
+            val uploaded = decodeBody<UploadImageResponse>(responseBody, "/upload/image", response.status.value)
+            if (uploaded.name.isBlank()) throw Exception("Image upload returned no filename")
+            logStore.info("client", "uploaded $fileName as '${uploaded.name}' (subfolder '${uploaded.subfolder}')")
+            if (uploaded.subfolder.isNotBlank()) "${uploaded.subfolder}/${uploaded.name}" else uploaded.name
+        }
+
+    /**
+     * Write a workflow file into the server's saved-workflow folder
+     * (POST /userdata/workflows/<name>, raw body - ComfyUI's own save
+     * path). The file shows up in the web UI and our Server Workflows list.
+     */
+    suspend fun saveUserWorkflow(fileName: String, content: String): String =
+        withContext(Dispatchers.IO) {
+            val encoded = java.net.URLEncoder.encode(fileName, "UTF-8")
+            logStore.debug("client", "POST /userdata/workflows/$fileName (${content.length} chars)")
+            val response = client.post("$serverAddress/userdata/workflows/$encoded") {
+                contentType(ContentType.Application.Json)
+                setBody(content)
+            }
+            val responseBody = response.bodyAsText()
+            if (!response.status.isSuccess()) {
+                throw Exception("Saving the workflow failed: HTTP ${response.status.value} ${responseBody.take(200)}")
+            }
+            logStore.info("client", "saved server workflow '$fileName'")
+            responseBody
+        }
 
     private fun getImage(filename: String, subfolder: String, type: String): String {
         return "$serverAddress/view?filename=$filename&subfolder=$subfolder&type=$type"
