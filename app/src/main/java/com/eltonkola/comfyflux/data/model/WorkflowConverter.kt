@@ -56,26 +56,76 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
         !s.opts.containsKey("forceInput") &&
             (isWidgetType(s.type) || s.opts["options"] is JsonArray)
 
+    /** One consumed widgets_values slot: its API input name plus the spec
+     * opts carrying its default (used when an older template predates the
+     * widget and simply has no value for it). */
+    internal data class Slot(val name: String, val opts: JsonObject, val options: List<String>? = null)
+
+    /** The option list of a COMBO-like spec, if it restricts values. */
+    private fun comboOptions(s: Spec): List<String>? = when {
+        s.type is JsonArray && (s.type as JsonArray).all { it is JsonPrimitive } ->
+            (s.type as JsonArray).map { it.jsonPrimitive.content }
+        s.opts["options"] is JsonArray &&
+            (s.opts["options"] as JsonArray).all { it is JsonPrimitive } ->
+            (s.opts["options"] as JsonArray).map { it.jsonPrimitive.content }
+        else -> null
+    }
+
     /**
      * Widget names in widgets_values order for one UI node: every widgetish
      * spec input (required then optional), each immediately followed by the
-     * dotted sub-widget slots the frontend exposes for combo-like inputs
-     * (sampling_mode.temperature, format.bit_depth, ...). Subslots belong to
-     * widgets_values only under a widgetish parent; plain sockets (autogrow
-     * image slots) do not consume values.
+     * dotted sub-widget slots of its V3 dynamic combo (the API names those
+     * as "format.bit_depth", "sampling_mode.temperature", ... - matching
+     * the server's finalized input names, validated by name). Which
+     * subslots exist depends on the option the parent combo holds at that
+     * position in widgets_values, hence [wv]. Plain sockets (autogrow image
+     * slots) do not consume values.
      */
-    private fun widgetSlots(cls: String, n: JsonObject): List<String> {
-        val slots = ArrayList<String>()
+    private fun widgetSlots(cls: String, n: JsonObject, wv: JsonArray): List<Slot> {
+        val slots = ArrayList<Slot>()
+        // Older frontends serialized sub-widgets as dotted entries in the
+        // node's inputs array (link null = still a widget); newer ones only
+        // declare them in the dynamic combo's per-option spec. Honour both:
+        // the spec expansion defines the order, leftover dotted names are
+        // appended (a slot must exist for every value that occupies
+        // widgets_values, or every later value shifts).
         val uiNames = (n["inputs"] as? JsonArray)
             ?.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
             ?: emptyList()
         specs(cls)?.forEach { s ->
             if (!isWidget(s)) return@forEach
-            slots += s.name
+            slots += Slot(s.name, s.opts, comboOptions(s))
             if (s.opts["control_after_generate"]?.jsonPrimitive?.booleanOrNull == true) {
-                slots += s.name + ":cag"
+                slots += Slot(s.name + ":cag", s.opts)
             }
-            uiNames.filter { it.startsWith("${s.name}.") }.forEach { slots += it }
+            // V3 dynamic combos declare per-option subinputs; the frontend
+            // renders them right after the parent, in declaration order.
+            val expanded = ArrayList<String>()
+            val dyn = s.opts["options"] as? JsonArray ?: return@forEach.also { }
+            if (dyn.any { it is JsonObject }) {
+                val chosenIdx = slots.indexOfLast { it.name == s.name }
+                val chosen = wv.getOrNull(chosenIdx)?.jsonPrimitive?.contentOrNull
+                val sel = (dyn.filterIsInstance<JsonObject>())
+                    .firstOrNull { it["key"]?.jsonPrimitive?.contentOrNull == chosen }
+                if (sel != null) {
+                    val ins = sel["inputs"]?.jsonObject
+                    for (req in booleanArrayOf(true, false)) {
+                        (ins?.get(if (req) "required" else "optional")?.jsonObject ?: continue)
+                            .forEach { (subName, rawSpec) ->
+                                val arr = rawSpec.jsonArray
+                                val subOpts = if (arr.size > 1) arr[1].jsonObject else JsonObject(emptyMap())
+                                val sub = Spec("${s.name}.$subName", arr[0], subOpts, req)
+                                if (!isWidget(sub)) return@forEach
+                                slots += Slot("${s.name}.$subName", subOpts, comboOptions(sub))
+                                expanded += "${s.name}.$subName"
+                            }
+                    }
+                }
+            }
+            uiNames.filter { it.startsWith("${s.name}.") && it !in expanded }
+                .forEach { name ->
+                    slots += Slot(name, JsonObject(emptyMap()))
+                }
         }
         return slots
     }
@@ -175,12 +225,11 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             }
         }
 
-        val specMap = sp.associateBy { it.name }
         val wv = n["widgets_values"] as? JsonArray ?: JsonArray(emptyList())
-        widgetSlots(cls, n).forEachIndexed { k, name ->
+        widgetSlots(cls, n, wv).forEachIndexed { k, slot ->
+            val name = slot.name
             if (name.endsWith(":cag")) {
-                val real = name.removeSuffix(":cag")
-                if (k < wv.size && specMap[real]?.opts?.containsKey("control_after_generate") == true) {
+                if (k < wv.size && slot.opts.containsKey("control_after_generate")) {
                     inputs["control_after_generate"] = wv[k]
                 }
                 return@forEachIndexed
@@ -188,9 +237,35 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             if (inputs.containsKey(name)) return@forEachIndexed
             when {
                 k < wv.size -> inputs[name] = wv[k]
-                specMap[name]?.opts?.get("default")?.let { it != JsonNull } == true ->
-                    inputs[name] = specMap.getValue(name).opts.getValue("default")
+                slot.opts["default"]?.let { it != JsonNull } == true ->
+                    inputs[name] = slot.opts.getValue("default")
             }
+        }
+
+        // Version drift: required inputs the template's widgets never
+        // carried (a newer server added them) get their declared default;
+        // socketless required aggregates the frontend auto-provides
+        // (ImageCompare's compare_view) get a placeholder the server
+        // accepts and ignores at execution.
+        sp.forEach { s ->
+            if (!s.required || inputs.containsKey(s.name)) return@forEach
+            if (s.opts["socketless"]?.jsonPrimitive?.booleanOrNull == true) {
+                inputs[s.name] = JsonPrimitive(true)
+            } else if (isWidget(s)) {
+                s.opts["default"]?.let { if (it != JsonNull) inputs[s.name] = it }
+            }
+        }
+
+        // Combo values outside the server's accepted list (the template was
+        // authored against different options) snap to the default, else the
+        // first legal value - otherwise validation rejects the whole prompt.
+        sp.forEach { s ->
+            val opts = comboOptions(s) ?: return@forEach
+            val v = inputs[s.name] as? JsonPrimitive ?: return@forEach
+            if (v.isString && v.content in opts) return@forEach
+            val d = s.opts["default"]
+            if (d is JsonPrimitive && d.content in opts) inputs[s.name] = d
+            else inputs[s.name] = JsonPrimitive(opts.first())
         }
 
         val title = n["title"]?.jsonPrimitive?.contentOrNull ?: cls

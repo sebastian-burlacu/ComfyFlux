@@ -9,6 +9,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.boolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -190,5 +191,79 @@ class WorkflowConverterTest {
         val latent = inputs(w, "459_456")
         val width = latent["width"]!!.jsonArray
         assertEquals(listOf("13", 0), width.mapIndexed { i, e -> if (i == 0) e.jsonPrimitive.content else e.jsonPrimitive.int })
+    }
+
+    @Test
+    fun v3OptionSubinputsExpandToDottedApiNames() {
+        // Real-world break: ComfyUI 0.43 SaveImageAdvanced/TextGenerate
+        // declare per-option subinputs in the dynamic combo spec, and the
+        // server validates the DOTTED names ("format.bit_depth"). The
+        // saved graph carries no dotted input entries for them - the only
+        // hints are the spec plus widgets_values order.
+        val info = json.parseToJsonElement(
+            """{
+              "Save": {"input": {"required": {
+                "images": ["IMAGE", {}],
+                "filename_prefix": ["STRING", {}],
+                "format": ["COMFY_DYNAMICCOMBO_V3", {"options": [
+                  {"key": "png", "inputs": {"required": {
+                    "bit_depth": ["COMBO", {"default": "8-bit", "options": ["8-bit", "16-bit"]}],
+                    "input_color_space": ["COMBO", {"default": "sRGB", "options": ["sRGB"]}]
+                  }}}
+                ]}]
+              }}}
+            }"""
+        ).jsonObject
+        val graph = json.parseToJsonElement(
+            """{
+              "nodes": [
+                {"id": 1, "type": "Save", "inputs": [], "widgets_values": ["x", "png"]},
+                {"id": 5, "type": "Save",
+                 "inputs": [{"name": "images", "link": 9}],
+                 "widgets_values": ["Qwen", "png", "8-bit", "sRGB"]}
+              ],
+              "links": [[9, 1, 0, 5, 0]]
+            }"""
+        ).jsonObject
+
+        val sav = inputs(WorkflowConverter(info).convert(graph), "5")
+        assertEquals("png", sav["format"]!!.jsonPrimitive.content)
+        assertEquals("8-bit", sav["format.bit_depth"]!!.jsonPrimitive.content)
+        assertEquals("sRGB", sav["format.input_color_space"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun socketlessRequiredInputGetsPlaceholderAndBadComboValuesSnap() {
+        // ImageCompare's compare_view is a required, socketless aggregate:
+        // the frontend auto-provides it; without one the whole prompt is
+        // rejected. A stale combo value (mtp: 0) must snap to the default
+        // instead of failing validation.
+        val info = json.parseToJsonElement(
+            """{
+              "ImageCompare": {"input": {
+                "required": {"compare_view": ["IMAGECOMPARE", {"socketless": true}]},
+                "optional": {
+                  "image_a": ["IMAGE", {}],
+                  "mtp": ["COMBO", {"default": "auto", "options": ["auto", "off"]}]
+                }
+              }},
+              "Src": {"input": {"required": {"x": ["INT", {}]}}}
+            }"""
+        ).jsonObject
+        val graph = json.parseToJsonElement(
+            """{
+              "nodes": [
+                {"id": 1, "type": "Src", "widgets_values": [1]},
+                {"id": 9, "type": "ImageCompare",
+                 "inputs": [{"name": "image_a", "link": 9}],
+                 "widgets_values": [0]}
+              ],
+              "links": [[9, 1, 0, 9, 0]]
+            }"""
+        ).jsonObject
+
+        val cmp = inputs(WorkflowConverter(info).convert(graph), "9")
+        assertEquals(true, cmp["compare_view"]!!.jsonPrimitive.boolean)
+        assertEquals("auto", cmp["mtp"]!!.jsonPrimitive.content)
     }
 }
