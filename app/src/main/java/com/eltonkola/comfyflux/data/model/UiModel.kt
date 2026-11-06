@@ -104,7 +104,15 @@ data class TemplateBrowserState(
     // File currently being downloaded/saved, drives the spinner.
     val importingName: String? = null,
     // Result of the last import (success with warnings, or failure text).
-    val message: String? = null
+    val message: String? = null,
+    // Categories the browser shows. Video/3D/audio/Comfy-API templates can
+    // never run on a plain local server (the API ones call hosted nodes),
+    // so they start hidden; the chips let you opt in.
+    val kinds: Set<com.eltonkola.comfyflux.data.network.TemplateKind> =
+        setOf(
+            com.eltonkola.comfyflux.data.network.TemplateKind.IMAGE,
+            com.eltonkola.comfyflux.data.network.TemplateKind.IMAGE_INPUT
+        )
 )
 
 data class ImageViewerUiState(

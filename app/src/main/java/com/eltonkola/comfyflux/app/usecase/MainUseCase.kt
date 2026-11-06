@@ -291,6 +291,15 @@ class MainUseCase(
     private val _templateState = MutableStateFlow(TemplateBrowserState())
     val templateState: StateFlow<TemplateBrowserState> = _templateState.asStateFlow()
 
+    /** Show/hide one template category in the browser. */
+    fun toggleTemplateKind(kind: com.eltonkola.comfyflux.data.network.TemplateKind) {
+        _templateState.update {
+            val kinds = it.kinds.toMutableSet()
+            if (!kinds.remove(kind)) kinds.add(kind)
+            it.copy(kinds = kinds)
+        }
+    }
+
     suspend fun refreshTemplates(force: Boolean = false) {
         if (_templateState.value.loading) return
         _templateState.update { it.copy(loading = true, error = null) }

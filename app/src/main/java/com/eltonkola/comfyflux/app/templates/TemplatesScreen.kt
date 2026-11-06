@@ -3,6 +3,9 @@ package com.eltonkola.comfyflux.app.templates
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,11 +50,12 @@ import coil.compose.AsyncImage
 import com.eltonkola.comfyflux.app.AppScreens
 import com.eltonkola.comfyflux.app.MainViewModel
 import com.eltonkola.comfyflux.data.network.TemplateEntry
+import com.eltonkola.comfyflux.data.network.TemplateKind
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Back
 import com.eltonkola.comfyflux.ui.theme.ikona.WorkflowIc
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TemplatesScreen(viewModel: MainViewModel, navController: NavController) {
 
@@ -97,6 +101,24 @@ fun TemplatesScreen(viewModel: MainViewModel, navController: NavController) {
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Category filters. "Image input" means the workflow asks for a
+            // photo on Create (img2img/editing). Video/3D/audio and Comfy
+            // Cloud API workflows start hidden: they cannot run locally.
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TemplateKind.entries.forEach { kind ->
+                    FilterChip(
+                        selected = kind in state.kinds,
+                        onClick = { viewModel.toggleTemplateKind(kind) },
+                        label = { Text(kind.label, fontSize = 12.sp) }
+                    )
+                }
+            }
+
             state.message?.let {
                 Text(
                     text = it,
@@ -123,9 +145,19 @@ fun TemplatesScreen(viewModel: MainViewModel, navController: NavController) {
                     Text("No templates loaded.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                val filtered = remember(query) {
-                    if (query.isBlank()) state.entries
-                    else state.entries.filter { it.title.contains(query.trim(), ignoreCase = true) }
+                val filtered = remember(query, state.kinds) {
+                    state.entries.filter { it.kind in state.kinds }.let { e ->
+                        if (query.isBlank()) e
+                        else e.filter { it.title.contains(query.trim(), ignoreCase = true) }
+                    }
+                }
+                if (filtered.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "Nothing matches - try another search or enable a category chip.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 150.dp),
@@ -190,6 +222,15 @@ fun TemplatesScreen(viewModel: MainViewModel, navController: NavController) {
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            if (entry.kind != TemplateKind.IMAGE) {
+                                // Plain image workflows need no label; only
+                                // opted-in categories get tagged.
+                                Text(
+                                    text = entry.kind.label,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -202,11 +243,20 @@ fun TemplatesScreen(viewModel: MainViewModel, navController: NavController) {
             onDismissRequest = { pending = null },
             title = { Text(entry.title) },
             text = {
-                Text(
-                    "This saves '${entry.fileName}' into your ComfyUI server's saved workflows. " +
-                            "The server must have the custom nodes the template uses - the app warns " +
-                            "about missing ones after the import."
-                )
+                Column {
+                    Text(
+                        "This saves '${entry.fileName}' into your ComfyUI server's saved workflows. " +
+                                "The server must have the custom nodes the template uses - the app warns " +
+                                "about missing ones after the import."
+                    )
+                    if (entry.kind == TemplateKind.CLOUD_API) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Heads up: this is a Comfy Cloud workflow. It calls hosted API nodes your server does not run, so it will fail unless you replace those nodes.",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             },
             confirmButton = {
                 Button(onClick = {

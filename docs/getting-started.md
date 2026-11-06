@@ -82,6 +82,14 @@ Server Workflows. After the import the app tells you if the template uses
 custom nodes your server doesn't have - install those (ComfyUI Manager)
 before expecting it to run.
 
+Chips under the search box filter the list by category: **Image**
+(text-to-image) and **Image input** (img2img, inpainting, editing,
+upscaling - these ask for a photo on the Create screen) are on by default;
+**Video**, **3D**, **Audio** and **Comfy API** start off because those
+workflows can't run on a normal local server (the Comfy API ones call
+hosted nodes - the app warns you if you try to import one). Enable a chip
+if you want to see them anyway.
+
 ## Prompts
 
 - The **prompt library** is an offline dataset of ~20k image prompts baked

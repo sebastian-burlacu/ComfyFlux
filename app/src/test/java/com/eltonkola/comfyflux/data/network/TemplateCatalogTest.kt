@@ -37,6 +37,33 @@ class TemplateCatalogTest {
         )
         // A template without a sibling -1.webp gets no thumbnail.
         assertNull(entries[1].thumbUrl)
+        // Kinds come out of the name classifier: plain vs "upscale" input.
+        assertEquals(
+            listOf(TemplateKind.IMAGE, TemplateKind.IMAGE_INPUT),
+            entries.map { it.kind }
+        )
+    }
+
+    @Test
+    fun classifyTemplatesBucketsRealCatalogNames() {
+        // Representative names straight from the live Comfy-Org listing.
+        // Precedence: cloud API beats everything, then video/audio/3D.
+        assertEquals(TemplateKind.CLOUD_API, classifyTemplate("api_wan2_7_i2v.json"))
+        assertEquals(TemplateKind.CLOUD_API, classifyTemplate("api_anthropic_claude.json"))
+        assertEquals(TemplateKind.VIDEO, classifyTemplate("image_to_video_wan.json"))
+        assertEquals(TemplateKind.VIDEO, classifyTemplate("ltxv_text_to_video.json"))
+        assertEquals(TemplateKind.VIDEO, classifyTemplate("template_ltx2_3_ic_lora_ingredients.json"))
+        assertEquals(TemplateKind.VIDEO, classifyTemplate("template_image_speech_to_video.json"))
+        assertEquals(TemplateKind.AUDIO, classifyTemplate("audio_stable_audio_3_medium.json"))
+        assertEquals(TemplateKind.MODEL_3D, classifyTemplate("3d_hunyuan3d_image_to_model.json"))
+        assertEquals(TemplateKind.MODEL_3D, classifyTemplate("3d_pixal3d_trellis2_image_to_model.json"))
+        // Workflows that need an input photo (img2img, editing, upscale).
+        assertEquals(TemplateKind.IMAGE_INPUT, classifyTemplate("flux_fill_inpaint_example.json"))
+        assertEquals(TemplateKind.IMAGE_INPUT, classifyTemplate("image_boogu_image_0_1_edit.json"))
+        assertEquals(TemplateKind.IMAGE_INPUT, classifyTemplate("utility_z_image_turbo_2k_upscaler.app.json"))
+        // Plain text-to-image stays the default.
+        assertEquals(TemplateKind.IMAGE, classifyTemplate("image_z_image_turbo.json"))
+        assertEquals(TemplateKind.IMAGE, classifyTemplate("flux_dev_checkpoint_example.json"))
     }
 
     @Test

@@ -175,6 +175,9 @@ class MainViewModel(
 
     val templateState = mainUseCase.templateState
 
+    fun toggleTemplateKind(kind: com.eltonkola.comfyflux.data.network.TemplateKind) =
+        mainUseCase.toggleTemplateKind(kind)
+
     fun refreshTemplates(force: Boolean = false) {
         viewModelScope.launch { mainUseCase.refreshTemplates(force) }
     }

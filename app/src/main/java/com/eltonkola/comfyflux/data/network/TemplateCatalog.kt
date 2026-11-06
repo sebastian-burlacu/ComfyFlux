@@ -16,13 +16,50 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+/** What a template actually produces, judged from its file name. */
+enum class TemplateKind(val label: String) {
+    IMAGE("Image"),
+    IMAGE_INPUT("Image input"),
+    VIDEO("Video"),
+    AUDIO("Audio"),
+    MODEL_3D("3D"),
+    CLOUD_API("Comfy API")
+}
+
 /** One Comfy-Org workflow template, as offered by the public catalog. */
 data class TemplateEntry(
     val fileName: String,
     val title: String,
     val downloadUrl: String,
-    val thumbUrl: String?
+    val thumbUrl: String? = null,
+    val kind: TemplateKind = TemplateKind.IMAGE
 )
+
+private val VIDEO_TOKEN = Regex("(^|_)(v2v|i2v|t2v|r2v|flf2v|wan\\d*|vidu|ltx\\d*|sora|kling|hailuo)([_.]|$)")
+
+/**
+ * Bucket a template by file name. The Comfy-Org repo names are strict
+ * enough that this is reliable: "api_" prefixes are Comfy Cloud-hosted
+ * workflows (they cannot run locally), model families keep their tokens.
+ * Precedence: cloud API > video > audio > 3D > image input > image.
+ */
+internal fun classifyTemplate(fileName: String): TemplateKind {
+    val n = fileName.lowercase()
+    if (n.startsWith("api_") || n.contains("_api_")) return TemplateKind.CLOUD_API
+    if (n.contains("video") || VIDEO_TOKEN.containsMatchIn(n)) return TemplateKind.VIDEO
+    if (n.contains("audio") || n.contains("music") || n.contains("tts") || n.contains("speech")) return TemplateKind.AUDIO
+    if (n.contains("3d") || n.contains("meshy") || n.contains("glb") || n.contains("gltf") ||
+        n.contains("trellis") || n.contains("triposr") || n.contains("splat") || n.contains("panorama")
+    ) return TemplateKind.MODEL_3D
+    val imageInput = listOf(
+        "img2img", "inpaint", "outpaint", "image_edit", "image_to", "_edit", "edit_",
+        "canny", "depth", "pose", "scribble", "redux", "upscale", "detailer", "hires",
+        "controlnet", "control_", "tile", "brightness", "contrast", "layer", "deblur",
+        "background", "soften", "sharp", "remove", "clean", "fix"
+    )
+    if (imageInput.any { n.contains(it) }) return TemplateKind.IMAGE_INPUT
+    return TemplateKind.IMAGE
+}
 
 @Serializable
 internal data class TreeEntry(
@@ -76,7 +113,8 @@ class TemplateCatalog {
                         downloadUrl = RAW_BASE + e.path,
                         thumbUrl = if ("$dir/$stem-1.webp".removePrefix("/") in thumbnails) {
                             "$RAW_BASE$dir/$stem-1.webp".removeSuffix("/")
-                        } else null
+                        } else null,
+                        kind = classifyTemplate(name)
                     )
                 }
                 .sortedBy { it.title }
