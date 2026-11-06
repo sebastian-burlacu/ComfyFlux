@@ -89,11 +89,13 @@ data class ImageGenerationUiState(
     // Optional user negative; empty keeps whatever the workflow specifies.
     val negativePrompt: String = "",
     val supportsNegativePrompt: Boolean = false,
-    // img2img: workflows with a LoadImage node accept a phone photo; the uri
-    // is session-only (content permissions don't survive restarts).
+    // img2img: every LoadImage node the workflow has becomes a slot the user
+    // can fill with a phone photo. Picks are session-only (content
+    // permissions don't survive restarts).
     val supportsImageInput: Boolean = false,
-    val inputImageUri: String = "",
-    val inputImageName: String = "",
+    val workflowNeeds: WorkflowNeeds? = null,
+    val imageInputs: List<ImageInput> = emptyList(),
+    val imagePicks: Map<String, ImagePick> = emptyMap(),
     val recentPrompts: List<String> = emptyList()
 )
 
@@ -120,3 +122,6 @@ data class ImageViewerUiState(
     val selected: Int = 0
 )
 
+
+/** One phone photo picked for a LoadImage slot. */
+data class ImagePick(val uri: String, val name: String)

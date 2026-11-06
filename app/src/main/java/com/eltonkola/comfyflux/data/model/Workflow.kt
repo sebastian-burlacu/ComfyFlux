@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -430,21 +431,61 @@ fun Workflow.updateCfgAndSteps(cfg: Float, steps: Int) {
  */
 fun Workflow.hasImageInput(): Boolean = any { it.value.classType == "LoadImage" }
 
+/** One LoadImage node the workflow expects, plus the file it ships with. */
+data class ImageInput(val id: String, val file: String, val primary: Boolean)
+
 /**
- * Point the workflow's PRIMARY LoadImage at the uploaded file (server name,
- * already subfolder-prefixed when the server put it in a subfolder).
- *
- * Exactly one node is patched, never all of them: edit templates keep
- * *reference* images in extra LoadImage nodes (e.g. the qwen image-edit
- * template loads a portrait and a shirt as two separate references -
- * overwriting both with the same photo breaks the workflow's premise).
- * The primary node is conventionally the lowest-id LoadImage.
+ * Every LoadImage the workflow loads, lowest-id first. Edit templates keep
+ * separate *reference* images in extra nodes (the qwen image-edit template
+ * loads a portrait AND a shirt), so the UI has to show one slot per node
+ * instead of assuming a single input photo. The primary node - the one an
+ * img2img photo belongs in - is conventionally the lowest-id LoadImage.
  */
-fun Workflow.applyInputImage(name: String) {
-    if (name.isBlank()) return
-    val primary = filterValues { it.classType == "LoadImage" }
-        .keys
-        .minByOrNull { it.toIntOrNull() ?: Int.MAX_VALUE }
-        ?: return
-    replaceInputs(primary, mapOf("image" to JsonPrimitive(name)))
+fun Workflow.imageInputs(): List<ImageInput> {
+    val nodes = filterValues { it.classType == "LoadImage" }
+    val primaryId = nodes.keys.minByOrNull { it.toIntOrNull() ?: Int.MAX_VALUE }
+    return nodes.entries
+        .sortedBy { it.key.toIntOrNull() ?: Int.MAX_VALUE }
+        .map { (id, node) ->
+            ImageInput(
+                id = id,
+                file = node.inputs.jsonObject["image"]?.jsonPrimitive?.contentOrNull ?: "",
+                primary = id == primaryId
+            )
+        }
+}
+
+/**
+ * Point each assigned LoadImage node at its uploaded server file (names are
+ * already subfolder-prefixed when the server put them in a subfolder).
+ * Unassigned nodes keep the file the workflow shipped with.
+ */
+fun Workflow.applyInputImages(assignments: Map<String, String>) {
+    assignments.forEach { (id, name) ->
+        if (name.isNotBlank() && containsKey(id)) {
+            replaceInputs(id, mapOf("image" to JsonPrimitive(name)))
+        }
+    }
+}
+
+/** What a workflow consumes, for the "This workflow needs" card. */
+data class WorkflowNeeds(
+    val imageCount: Int,
+    /** Empty latent node: the size sliders drive output size. */
+    val hasLatent: Boolean,
+    /** No latent to size: the output follows an encoded input image. */
+    val usesImageLatent: Boolean,
+    /** Class of the node the prompt text lands in. */
+    val encoder: String?
+)
+
+fun Workflow.needs(): WorkflowNeeds {
+    val targets = promptTextTargets().mapNotNull { (id, _) -> this[id]?.classType }
+    return WorkflowNeeds(
+        imageCount = filterValues { it.classType == "LoadImage" }.size,
+        hasLatent = values.any { it.classType in EMPTY_LATENT_NODES },
+        usesImageLatent = values.any { it.classType == "VAEEncode" },
+        encoder = targets.firstOrNull { it.contains("Encode", ignoreCase = true) }
+            ?: targets.firstOrNull()
+    )
 }

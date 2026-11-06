@@ -45,10 +45,11 @@ don't rewrite your saved file.
   the prompt. A workflow without them still runs — you just can't drive those
   values from the phone.
 - Runtime *image input* (img2img, inpaint, ControlNet from a photo) works
-  for the standard `LoadImage` node: pick a photo on the Prompt tab, the app
-  uploads it to the server on Create and points the node at it. Image nodes
-  from custom packs that don't use `LoadImage` still run with the file the
-  workflow already references.
+  for the standard `LoadImage` node: every such node becomes a slot on the
+  Prompt tab with its own photo picker, and the app uploads each pick on
+  Create and points the node at it. Image nodes from custom packs that
+  don't use `LoadImage` still run with the file the workflow already
+  references.
 
 ## What the app deliberately doesn't do
 

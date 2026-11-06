@@ -47,12 +47,18 @@ Two sources, picked from the drawer on the Create screen:
 3. **Advanced** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
    step count. CFG/steps set to `0` keep whatever the workflow itself defines;
    any non-zero value overrides every sampler in the graph.
-4. **Input image** (Prompt tab): workflows that load an image (a
-   `LoadImage` node) show a **Choose input image** button. Pick a photo; on
-   Create it's uploaded to the server and wired into the node automatically
-   - that's img2img from your phone. Leave it unset and the workflow keeps
-   the file it references. The pick is for this app session (restarts clear
-   it; re-picking the same photo doesn't re-upload it).
+4. **Image inputs** (Prompt tab): the card under the prompt shows what the
+   workflow consumes - how many `LoadImage` nodes it has, whether the size
+   sliders apply, and where the prompt text goes. Each image slot gets its
+   **own pick button** and shows a thumbnail of what it expects (your pick,
+   or the template's own reference file, fetched from the server). Edit
+   templates often load *several different* images (e.g. a portrait plus a
+   clothing reference), so pick per slot; **Use one photo for all** covers
+   workflows whose branches share a single input. Picked photos upload on
+   Create and the size sliders snap to the first photo's aspect ratio (a
+   square latent fed a portrait photo is what makes outputs look cropped).
+   Picks are for this app session; re-picking the same photo doesn't
+   re-upload it.
 5. **Models** (Advanced tab): when the workflow loads model files the server
    can list (checkpoints, UNETs, LoRAs, VAEs, CLIPs, ControlNets), a dropdown
    appears for each — the same "pick your safetensors" step as in the web UI,

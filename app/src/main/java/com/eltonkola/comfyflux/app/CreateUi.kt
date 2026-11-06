@@ -54,7 +54,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.ContentScale
+import com.eltonkola.comfyflux.data.model.ImageInput
+import com.eltonkola.comfyflux.data.model.WorkflowNeeds
 import androidx.compose.ui.Alignment
+import coil.compose.AsyncImage
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -266,10 +270,20 @@ fun PromptTab(
     viewModel: MainViewModel
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
+    // Which LoadImage slot the picker answers; "all" = one photo for every slot.
+    var pendingSlot by remember { mutableStateOf<String?>(null) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let { viewModel.setInputImage(it.toString()) }
+        val slot = pendingSlot
+        pendingSlot = null
+        uri?.let {
+            when (slot) {
+                null -> Unit
+                "all" -> viewModel.setAllInputImages(it.toString())
+                else -> viewModel.setInputImage(slot, it.toString())
+            }
+        }
     }
 
     Column(
@@ -393,57 +407,9 @@ fun PromptTab(
         // phone; it is uploaded to the server on Create and written into
         // the node automatically. Placed right under the prompt box and
         // boxed - at the bottom of the tab it was easy to miss.
-        if (uiState.supportsImageInput) {
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Ikona.Image,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Text(
-                            text = "This workflow loads an image",
-                            fontSize = 14.sp
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        OutlinedButton(onClick = { imagePicker.launch("image/*") }) {
-                            Text(
-                                text = if (uiState.inputImageName.isBlank()) "Choose image"
-                                else if (uiState.inputImageName.length > 20) uiState.inputImageName.take(20) + "…"
-                                else uiState.inputImageName,
-                                fontSize = 13.sp
-                            )
-                        }
-                        if (uiState.inputImageUri.isNotEmpty()) {
-                            HelpIconButton(
-                                onClick = { viewModel.setInputImage("") },
-                                imageVector = Ikona.Clean,
-                                size = 34.dp,
-                                iconSize = 18.dp,
-                                help = "Remove the input image"
-                            )
-                        }
-                    }
-                    Text(
-                        text = if (uiState.inputImageUri.isNotEmpty())
-                            "Uploaded when you tap Create and written into the workflow's main image input; the size below is matched to its aspect. Other reference images in the workflow keep the template's own files."
-                        else "Pick one for img2img, or leave unset to use the file saved in the workflow.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
-            }
+        ImageNeedsCard(uiState, viewModel, pendingSlot) { slot ->
+            pendingSlot = slot
+            imagePicker.launch("image/*")
         }
 
         if (uiState.supportsNegativePrompt) {
@@ -888,3 +854,164 @@ fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainView
     }
 }
 
+
+/**
+ * One card for everything a workflow consumes: how many image slots it has
+ * (each with its own photo picker and the file the template ships), whether
+ * the size sliders apply, and which node the prompt text lands in. Most
+ * "the app broke my workflow" reports are really expectation gaps - this
+ * makes what the workflow does to your photo visible before you tap Create.
+ */
+@Composable
+fun ImageNeedsCard(
+    uiState: ImageGenerationUiState,
+    viewModel: MainViewModel,
+    pendingSlot: String?,
+    onPick: (String) -> Unit
+) {
+    val needs = uiState.workflowNeeds
+    if (!uiState.supportsImageInput && needs == null) return
+
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Ikona.Image,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = when {
+                        uiState.imageInputs.isEmpty() -> "This workflow takes no image input"
+                        uiState.imageInputs.size == 1 -> "This workflow loads one image"
+                        else -> "This workflow loads ${uiState.imageInputs.size} images"
+                    },
+                    fontSize = 14.sp
+                )
+            }
+            needs?.let {
+                Text(
+                    text = needsSummary(it),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            uiState.imageInputs.forEach { slot ->
+                ImageSlotRow(
+                    slot = slot,
+                    uiState = uiState,
+                    active = pendingSlot == slot.id,
+                    onPick = { onPick(slot.id) },
+                    onClear = { viewModel.setInputImage(slot.id, "") }
+                )
+            }
+            if (uiState.imageInputs.size > 1) {
+                TextButton(onClick = { onPick("all") }) {
+                    Text("Use one photo for all", fontSize = 13.sp)
+                }
+                Text(
+                    text = "Only needed when the images are meant to be the same photo; " +
+                            "edit templates usually want DIFFERENT files per slot.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = "Picked photos are uploaded when you tap Create, and the size " +
+                        "sliders follow the aspect of the first photo. Slots you leave " +
+                        "alone keep the file saved in the workflow.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImageSlotRow(
+    slot: ImageInput,
+    uiState: ImageGenerationUiState,
+    active: Boolean,
+    onPick: () -> Unit,
+    onClear: () -> Unit
+) {
+    val pick = uiState.imagePicks[slot.id]
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 8.dp)
+    ) {
+        // Picked photo, or the template's own reference file straight off
+        // the server input folder, so you can see what each slot expects.
+        val model: Any? = when {
+            pick != null -> pick.uri
+            slot.file.isNotBlank() && uiState.stats != null ->
+                "${uiState.server.trimEnd('/')}/view?filename=${android.net.Uri.encode(slot.file, "/")}&type=input"
+            else -> null
+        }
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            if (model != null) {
+                AsyncImage(
+                    model = model,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = slotLabel(slot),
+                fontSize = 13.sp
+            )
+            Text(
+                text = pick?.name?.takeIf { it.isNotBlank() }
+                    ?: slot.file.ifBlank { "no file set" },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+        OutlinedButton(onClick = onPick) {
+            Text(text = if (pick == null) "Choose" else "Change", fontSize = 13.sp)
+        }
+        if (pick != null) {
+            HelpIconButton(
+                onClick = onClear,
+                imageVector = Ikona.Clean,
+                size = 34.dp,
+                iconSize = 18.dp,
+                help = "Remove this image"
+            )
+        }
+    }
+}
+
+private fun slotLabel(slot: ImageInput): String = when {
+    slot.primary -> "Main image"
+    else -> "Reference ${slot.file.substringAfterLast('/').substringBeforeLast('.')}"
+}
+
+private fun needsSummary(needs: WorkflowNeeds): String {
+    val parts = mutableListOf<String>()
+    if (needs.hasLatent) parts += "output size comes from the sliders"
+    if (needs.usesImageLatent) parts += "output follows your image size"
+    needs.encoder?.let { parts += "prompt goes to $it" }
+    return parts.joinToString(" \u00b7 ")
+}

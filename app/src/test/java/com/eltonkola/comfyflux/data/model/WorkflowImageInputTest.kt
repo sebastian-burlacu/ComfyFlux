@@ -37,13 +37,25 @@ class WorkflowImageInputTest {
     }
 
     @Test
-    fun applyInputImagePatchesOnlyThePrimaryLoadImage() {
-        // Edit templates keep REFERENCE images in extra LoadImage nodes
-        // (the qwen image-edit template loads a portrait and a separate
-        // shirt); overwriting every node with one photo breaks that
-        // premise. Only the lowest-id LoadImage is the workflow's input.
+    fun imageInputsListEveryLoadImageAndMarkThePrimary() {
+        // The qwen image-edit template loads a portrait AND a separate
+        // shirt reference; the UI needs one labelled slot per node.
+        val slots = json.decodeFromString<Workflow>(graph).imageInputs()
+        assertEquals(listOf("37", "60"), slots.map { it.id })
+        assertEquals(listOf("workflow_saved.png", "second.png"), slots.map { it.file })
+        assertEquals(listOf(true, false), slots.map { it.primary })
+    }
+
+    @Test
+    fun applyInputImagesPatchesOnlyAssignedNodes() {
         val wf = json.decodeFromString<Workflow>(graph)
-        wf.applyInputImage("phone/IMG_0001.jpg")
+        wf.applyInputImages(
+            mapOf(
+                "37" to "phone/IMG_0001.jpg",
+                "60" to "",                       // cleared: keeps template file
+                "999" to "phone/ghost.png"        // unknown node: ignored
+            )
+        )
 
         assertEquals(
             "phone/IMG_0001.jpg",
@@ -55,15 +67,5 @@ class WorkflowImageInputTest {
         )
         // Nothing else moves.
         assertEquals("keep", wf.getValue("41").inputs.jsonObject["text"]!!.jsonPrimitive.content)
-    }
-
-    @Test
-    fun blankUploadNameLeavesWorkflowFilesAlone() {
-        val wf = json.decodeFromString<Workflow>(graph)
-        wf.applyInputImage("")
-        assertEquals(
-            "workflow_saved.png",
-            wf.getValue("37").inputs.jsonObject["image"]!!.jsonPrimitive.content
-        )
     }
 }

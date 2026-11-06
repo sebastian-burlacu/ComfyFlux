@@ -169,8 +169,16 @@ class MainViewModel(
         }
     }
 
-    fun setInputImage(uriString: String) {
-        mainUseCase.setInputImage(uriString)
+    fun setInputImage(slotId: String, uriString: String) {
+        mainUseCase.setInputImage(slotId, uriString)
+        if (uriString.isNotBlank()) {
+            viewModelScope.launch { mainUseCase.adaptSizeToInputImage(uriString) }
+        }
+    }
+
+    /** One photo for every LoadImage slot (branches that share one input). */
+    fun setAllInputImages(uriString: String) {
+        mainUseCase.setAllInputImages(uriString)
         if (uriString.isNotBlank()) {
             viewModelScope.launch { mainUseCase.adaptSizeToInputImage(uriString) }
         }
