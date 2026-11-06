@@ -32,8 +32,8 @@ android {
         applicationId = "com.eltonkola.comfyflux"
         minSdk = 24
         targetSdk = 34
-        versionCode = 23
-        versionName = "1.22"
+        versionCode = 24
+        versionName = "1.23"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

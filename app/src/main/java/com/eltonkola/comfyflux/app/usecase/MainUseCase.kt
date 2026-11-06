@@ -359,7 +359,14 @@ class MainUseCase(
         if (uiState.value.prompt.isBlank()) {
             return
         }
-        start()
+        // Tapping Create while a generation runs queues this job behind it:
+        // the FluxAPI session streams every queued job, so only the call that
+        // is NOT joining a running session owns the timer, the status
+        // refresh and the outcome toast.
+        val joiningRunningSession = fluxAPI.progressUiState.value.executing
+        if (!joiningRunningSession) {
+            start()
+        }
         try {
             fluxAPI.setServerAddress(normalizeServerUrl(uiState.value.server))
             val prompt = loadWorkflow()
@@ -367,15 +374,18 @@ class MainUseCase(
             withContext(Dispatchers.IO) {
                 fluxAPI.generateImage(prompt)
             }
-            checkStatus()
-            notifyGenerationOutcome()
             if (fluxAPI.progressUiState.value.error.isEmpty()) {
                 addRecentPrompt(uiState.value.prompt)
             }
+            val stillRunning = fluxAPI.progressUiState.value.executing
+            if (joiningRunningSession && stillRunning) return
+            checkStatus()
+            notifyGenerationOutcome()
+            if (!joiningRunningSession) stop()
         } catch (e: Exception) {
             reportGenerationFailure(e, "generate (${uiState.value.workflow.name})")
+            if (!joiningRunningSession) stop()
         }
-        stop()
     }
 
     /** Re-queue a past generation exactly as it ran (server history keeps the full prompt). */

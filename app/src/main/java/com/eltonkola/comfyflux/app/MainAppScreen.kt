@@ -41,6 +41,7 @@ import com.eltonkola.comfyflux.app.workflows.WorkflowsUi
 import com.eltonkola.comfyflux.components.DoubleDrawerUi
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Create
+import com.eltonkola.comfyflux.ui.theme.ikona.Delete
 import com.eltonkola.comfyflux.ui.theme.ikona.History
 import com.eltonkola.comfyflux.ui.theme.ikona.Menu
 import com.eltonkola.comfyflux.ui.theme.ikona.Search
@@ -122,43 +123,69 @@ fun MainAppScreen(
                     horizontalArrangement = Arrangement.End
                 ) {
 
-                    FloatingActionButton(
-                        containerColor = MaterialTheme.colorScheme.secondary,
-                        onClick = {
-                            showBottomSheet = true
-                        },
-                        modifier = Modifier.width(120.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
+                    Column(horizontalAlignment = Alignment.End) {
+                        // Pending jobs can be dropped without touching the
+                        // one that is running right now.
+                        if (progressUiState.queueRemaining > 0) {
+                            ExtendedFloatingActionButton(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                onClick = {
+                                    viewModel.clearQueue()
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Ikona.Delete,
+                                    contentDescription = "Clear queue",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(text = "Clear queue (${progressUiState.queueRemaining})")
+                            }
+                            Spacer(modifier = Modifier.size(8.dp))
+                        }
+
+                        FloatingActionButton(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            onClick = {
+                                showBottomSheet = true
+                            },
+                            modifier = Modifier.width(120.dp)
                         ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
 
-                            Icon(
-                                imageVector = Ikona.History,
-                                contentDescription = "History",
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(text = "History")
+                                Icon(
+                                    imageVector = Ikona.History,
+                                    contentDescription = "History",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(text = "History")
 
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.size(8.dp))
 
-                    if (progressUiState.executing) {
-                        ExtendedFloatingActionButton(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            onClick = {
-                                viewModel.interruptImages()
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (progressUiState.executing) {
+                            ExtendedFloatingActionButton(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                onClick = {
+                                    viewModel.interruptImages()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Ikona.Stop,
+                                    contentDescription = "Stop",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(text = "Stop")
                             }
-                        ) {
-                            Icon(
-                                imageVector = Ikona.Stop,
-                                contentDescription = "Stop",
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(text = "Stop")
+                            Spacer(modifier = Modifier.size(8.dp))
                         }
-                    } else {
+
+                        // Always available: tapping Create while a generation
+                        // runs queues another job behind it.
                         ExtendedFloatingActionButton(
                             containerColor = MaterialTheme.colorScheme.primary,
                             onClick = {
