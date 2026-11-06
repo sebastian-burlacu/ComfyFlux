@@ -18,13 +18,21 @@ recognises API format and skips conversion.
 
 | Control | What gets rewritten |
 | --- | --- |
-| Prompt | The positive `CLIPTextEncode` text input (found by walking conditioning links) |
+| Prompt | The positive `CLIPTextEncode` text input (found by walking conditioning links; through switch nodes only the active branch is touched, so a "prompt enhance on/off" switch picks the right box) |
+| Negative prompt | The `negative` conditioning branch's text input — a dedicated `negative_prompt` slot or a second `CLIPTextEncode`. The field only appears for workflows that actually have one; graphs deriving the negative from the positive (ConditioningZeroOut) are left alone |
 | Size / batch | `EmptyLatentImage` width/height/batch_size |
 | Seed | `KSampler` seed / `KSamplerAdvanced` & `RandomNoise` noise_seed |
 | CFG / steps | `cfg` and `steps` on every `KSampler`/`KSamplerAdvanced` (cfg only for `CFGGuider`); `0` = leave untouched |
 | Models | The file input of any loader node the server can list files for (`ckpt_name`, `unet_name`, `lora_name`, `vae_name`, `clip_name*`, `control_net_name`, ...) — detection is driven by the server's own `object_info`, so custom GGUF loaders work too |
 
 Everything else in the graph runs exactly as you built it in the web UI.
+
+Workflow switches: boolean inputs of subgraph instances (the web UI's
+on/off widgets — e.g. `switch` for prompt-enhance, `thinking`) show up on
+the Advanced tab as switches. Flipping one changes the converted graph
+before patching, so prompt targeting follows the newly active branch.
+Switch states are per-workflow and reset when you change workflow; they
+don't rewrite your saved file.
 
 ## Requirements for a server workflow to run
 

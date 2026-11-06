@@ -52,8 +52,16 @@ Two sources, picked from the drawer on the Create screen:
    appears for each — the same "pick your safetensors" step as in the web UI,
    without the graph. Options come live from the server; selections reset
    when you switch workflows.
-5. Hit generate. Progress, current node and queue position show live; finished
-   images land in the History tab and in the ComfyUI output folder.
+5. Hit **Create**. Progress, current node and queue position show live;
+   finished images land in the preview grid, the History tab and the ComfyUI
+   output folder.
+
+Create can be tapped again while a generation runs: the app queues another
+job behind it (the server works the queue first-come, first-served) and all
+images accumulate in one grid. While something is running, **Stop** appears
+above Create — that interrupts only the current job, queued ones keep going.
+When jobs are pending, **Clear queue** appears above History and drops every
+queued job without touching the running one.
 
 Rerunning a past generation: History tab → the refresh icon on a row re-queues
 it with its exact original settings.
@@ -64,13 +72,19 @@ it with its exact original settings.
   into the app. Search it, tap a result, done. No network involved.
 - **Recent prompts**: chips under the prompt box hold your last 10 prompts
   from successful runs; one tap restores one.
-- **Enrich** (magic wand) expands a short prompt into a richer one using
-  Groq's hosted LLM. It's completely optional: add a free API key from
-  [console.groq.com](https://console.groq.com) in Settings, and nothing talks
-  to Groq until you press the button.
+- **Enrich** (magic wand) expands a short prompt into a richer one using an
+  LLM of your choice. Out of the box it uses Groq's hosted model: add a free
+  API key from [console.groq.com](https://console.groq.com) in Settings, and
+  nothing talks to Groq until you press the button.
+- Settings also has **Enrichment endpoint & model**: point them at any
+  OpenAI-compatible chat endpoint — OpenRouter, OpenAI, llama.cpp — or a
+  local [Ollama](https://ollama.com) server (`http://<your-server>:11434/v1`
+  plus a model name like `qwen2.5:7b-instruct`); no key needed there.
+  Anthropic's API speaks a different protocol and is not supported.
 
 ## Drafts
 
-Whatever you last had on the Create screen — prompt, size, batch, seed, CFG,
-steps, bundled workflow — is restored after an app restart. Server-selected
-workflows aren't (their list only exists after connecting).
+Whatever you last had on the Create screen — prompt, negative prompt, size,
+batch, seed, CFG, steps, workflow — is restored after an app restart. That
+includes workflows you picked from the server: the app re-selects one right
+after connecting.
