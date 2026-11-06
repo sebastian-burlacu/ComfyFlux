@@ -21,7 +21,8 @@ recognises API format and skips conversion for those.
 | --- | --- |
 | Prompt | The positive `CLIPTextEncode` text input (found by walking conditioning links; through switch nodes only the active branch is touched, so a "prompt enhance on/off" switch picks the right box) |
 | Negative prompt | The `negative` conditioning branch's text input — a dedicated `negative_prompt` slot or a second `CLIPTextEncode`. The field only appears for workflows that actually have one; graphs deriving the negative from the positive (ConditioningZeroOut) are left alone |
-| Size / batch | `EmptyLatentImage` width/height/batch_size |
+| Size / batch | `EmptyLatentImage` width/height/batch_size, or a `ResolutionSelector` node's `aspect_ratio` + `megapixels` when the workflow uses one |
+| Sampler / scheduler / denoise | `KSampler`, `KSamplerAdvanced`, `KSamplerSelect` inputs; options come from `object_info` |
 | Seed | `KSampler` seed / `KSamplerAdvanced` & `RandomNoise` noise_seed |
 | CFG / steps | `cfg` and `steps` on every `KSampler`/`KSamplerAdvanced` (cfg only for `CFGGuider`); `0` = leave untouched |
 | Models | The file input of any loader node the server can list files for (`ckpt_name`, `unet_name`, `lora_name`, `vae_name`, `clip_name*`, `control_net_name`, ...) — detection is driven by the server's own `object_info`, so custom GGUF loaders work too |

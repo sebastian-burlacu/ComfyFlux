@@ -43,10 +43,24 @@ Two sources, picked from the drawer on the Create screen:
 ## Generating
 
 1. Pick a workflow, write a prompt.
-2. **Size / Batch** tab: width, height, batch count.
+2. **Size / Batch** tab: width, height, batch count. If the workflow drives
+   its own size through a `ResolutionSelector` node (the Comfy-Org
+   text-to-image templates for Qwen Image 2.1, FLUX.3 Klein, Krea 2 and MOSS
+   all do; image-*edit* templates usually take their size from the input photo
+   instead), an **Aspect ratio** chip row appears
+   under the sliders: the sliders set how many pixels, the chips set the
+   shape, and the preview box follows both. Pick a chip and the sliders snap
+   to that shape; move a slider and the app picks the closest offered aspect
+   again.
 3. **Advanced** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
    step count. CFG/steps set to `0` keep whatever the workflow itself defines;
-   any non-zero value overrides every sampler in the graph.
+   any non-zero value overrides every sampler in the graph. Below them the
+   **Sampler** and **Scheduler** dropdowns and a **denoise** slider appear for
+   workflows that have a `KSampler` / `KSamplerAdvanced` / `KSamplerSelect`
+   node — the option lists come from `object_info`, so samplers installed by
+   custom nodes show up too. Leaving denoise at *keep* means the slider does
+   nothing and the workflow's own value runs; moving it overrides every
+   sampler node in the graph (inpaint-style workflows usually want ~1.0).
 4. **Image inputs** (Prompt tab): the card under the prompt shows what the
    workflow consumes - how many `LoadImage` nodes it has, whether the size
    sliders apply, and where the prompt text goes. Each image slot gets its

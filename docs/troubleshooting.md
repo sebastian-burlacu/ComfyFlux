@@ -43,6 +43,8 @@ opens the share sheet (mail, Drive, chat, wherever). File name is
 | `Connection refused` / `Failed to resolve host` | Server isn't listening on the network (`--listen`), wrong IP/port, or phone on a different network |
 | `Workflow 'name' came back empty (HTTP 404)` | The file listed in the drawer no longer matches the server (renamed/deleted since the last refresh) — reconnect to refresh the list |
 | `prompt rejected: ...` | ComfyUI refused the graph before running: usually a node type that isn't installed on the server. The full `node_errors` follow in the log |
+| A run fails and the red line says little | Tap **Show details** under the error: it names the failing node and its type, the server's own message, which nodes completed first, and lists the model files the template asked for that this server does not have. Copy it into a report |
+| `Given normalized_shape=[...] expected input with shape ...` | Shape mismatch between the model files and the conditioning. Usually the template wants newer/bigger checkpoints than the server has (the details sheet lists them). Download the files the template names, or pick a template built for what you have |
 | `execution failed: ... CUDA out of memory` | The GPU ran out. Close whatever else owns VRAM or lower resolution/batch. If the text looks like a remote API error (`type=api_error`), it came from a custom node's upstream service, not your machine |
 | `Generation timed out after 15 minutes` | No terminal event within the limit; long video/large workflows may need patience, dead ones need a server restart |
 | `Prompt enrichment failed: HTTP 500 ...` | Groq's hosted model hiccuped; generation is unaffected — retry or type the prompt yourself |
