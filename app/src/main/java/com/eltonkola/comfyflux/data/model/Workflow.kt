@@ -334,6 +334,62 @@ fun Workflow.updatePrompt(prompt: String) {
     }
 }
 
+/** Input names where a negative prompt can live, preferred over generic ones. */
+private val NEGATIVE_TEXT_KEYS = listOf("negative_prompt", "negative_text", "negative")
+
+/**
+ * Where a user negative prompt belongs: walk the NEGATIVE conditioning
+ * links and land on the node holding that text (a dedicated negative
+ * encoder, a negative_prompt slot, or its linked literal). Nodes already
+ * patched as the positive prompt are skipped, so graphs that derive the
+ * negative from the positive (ConditioningZeroOut) are left alone.
+ */
+fun Workflow.negativeTextTargets(): List<Pair<String, String>> {
+    val positiveTargets = promptTextTargets()
+    val found = mutableListOf<Pair<String, String>>()
+    val visited = mutableSetOf<String>()
+    val queue = ArrayDeque<String>()
+
+    filterValues { it.classType in CONDITIONING_CONSUMERS }
+        .forEach { (_, node) ->
+            node.inputs.jsonObject
+                .filterKeys { it == "negative" || it == "negative_input" }
+                .values
+                .mapNotNull { it.linkedNodeId() }
+                .forEach { queue.add(it) }
+        }
+
+    while (queue.isNotEmpty()) {
+        val id = queue.removeFirst()
+        if (!visited.add(id)) continue
+        val node = this[id] ?: continue
+
+        val key = (NEGATIVE_TEXT_KEYS + TEXT_LITERAL_KEYS).firstOrNull { k ->
+            node.inputs.jsonObject[k]?.let { v ->
+                v.jsonPrimitiveOrNull?.isString == true || v is JsonArray
+            } == true
+        }
+        if (key != null) {
+            // Never patch the positive target through the negative walk
+            // (graphs that derive the negative via ConditioningZeroOut).
+            resolveLiteralTarget(id, key)
+                ?.filter { it !in positiveTargets }
+                ?.forEach { t -> if (t !in found) found += t }
+            continue
+        }
+        queue.addAll(node.conditioningLinks())
+    }
+    return found
+}
+
+/** Write the user's negative prompt; no-op when the graph has nowhere for it. */
+fun Workflow.updateNegativePrompt(prompt: String) {
+    if (prompt.isBlank()) return
+    negativeTextTargets().forEach { (id, key) ->
+        replaceInputs(id, mapOf(key to JsonPrimitive(prompt)))
+    }
+}
+
 fun Workflow.updateSeed(seed: Long) {
     entries.toList().forEach { (id, node) ->
         SEED_INPUTS[node.classType]?.let { key ->

@@ -82,6 +82,13 @@ data class ImageGenerationUiState(
     // Model choices detected on the selected workflow + files picked for them.
     val modelSlots: List<ModelSlot> = emptyList(),
     val modelOverrides: Map<String, String> = emptyMap(),
+    // Boolean inputs the workflow itself exposes (e.g. prompt enhance on/off)
+    // and the user's flips; key = "nodeId|inputIndex".
+    val workflowToggles: List<WorkflowToggle> = emptyList(),
+    val toggleOverrides: Map<String, Boolean> = emptyMap(),
+    // Optional user negative; empty keeps whatever the workflow specifies.
+    val negativePrompt: String = "",
+    val supportsNegativePrompt: Boolean = false,
     val recentPrompts: List<String> = emptyList()
 )
 

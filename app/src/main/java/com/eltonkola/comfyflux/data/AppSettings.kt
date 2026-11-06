@@ -22,6 +22,7 @@ data class GenerationDraft(
     val batchSize: Int = 1,
     val cfg: Float = 0f,
     val steps: Int = 0,
+    val negativePrompt: String = "",
     val workflowName: String = "",
     val workflowUri: String = "",
     val workflowIsServer: Boolean = false

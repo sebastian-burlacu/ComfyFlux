@@ -120,6 +120,52 @@ class PromptTextTargetsTest {
     }
 
     @Test
+    fun negativeGoesToItsOwnSlotNotThePositiveOne() {
+        val wf = json.decodeFromString<Workflow>(
+            """
+            {
+              "458": {"class_type": "KSampler", "inputs": {"positive": [452, 0], "negative": [452, 1], "model": [451, 0]}},
+              "452": {"class_type": "TextEncodeQwenImage21", "inputs": {"prompt": "baked positive", "negative_prompt": "old negative"}},
+              "451": {"class_type": "UNETLoader", "inputs": {"unet_name": "x.safetensors"}},
+              "9": {"class_type": "SaveImage", "inputs": {"images": [458, 0]}}
+            }
+            """.trimIndent()
+        )
+        assertEquals(listOf("452" to "negative_prompt"), wf.negativeTextTargets())
+        wf.updatePrompt("a llama in a hat")
+        wf.updateNegativePrompt("blurry text")
+        assertEquals("a llama in a hat", wf.getValue("452").inputs.jsonObject["prompt"]!!.jsonPrimitive.content)
+        assertEquals("blurry text", wf.getValue("452").inputs.jsonObject["negative_prompt"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun zeroOutNegativeNeverOverwritesThePositive() {
+        // krea-style: negative = ConditioningZeroOut(positive encoder).
+        val wf = kreaStyle
+        assertEquals(emptyList<Pair<String, String>>(), wf.negativeTextTargets())
+        wf.updateNegativePrompt("should not be written")
+        // Positive widget untouched.
+        assertEquals("old marathon prompt", wf.getValue("63").inputs.jsonObject["value"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun classicSecondEncoderGetsTheNegative() {
+        val wf = json.decodeFromString<Workflow>(
+            """
+            {
+              "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "old", "clip": [1, 0]}},
+              "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "bad dogs", "clip": [1, 0]}},
+              "10": {"class_type": "KSampler", "inputs": {"positive": [6, 0], "negative": [7, 0]}},
+              "1": {"class_type": "CLIPLoader", "inputs": {"clip_name": "clip.safetensors"}}
+            }
+            """.trimIndent()
+        )
+        wf.updateNegativePrompt("watermarks")
+        assertEquals("old", wf.getValue("6").inputs.jsonObject["text"]!!.jsonPrimitive.content)
+        assertEquals("watermarks", wf.getValue("7").inputs.jsonObject["text"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun classicLiteralEncoderStillPatches() {
         val wf = json.decodeFromString<Workflow>(
             """

@@ -18,6 +18,9 @@ import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
 import com.eltonkola.comfyflux.data.model.applyModelOverrides
 import com.eltonkola.comfyflux.data.model.detectModelSlots
+import com.eltonkola.comfyflux.data.model.negativeTextTargets
+import com.eltonkola.comfyflux.data.model.updateNegativePrompt
+import com.eltonkola.comfyflux.data.model.detectWorkflowToggles
 import com.eltonkola.comfyflux.data.model.promptTextTargets
 import com.eltonkola.comfyflux.data.model.updateCfgAndSteps
 import com.eltonkola.comfyflux.data.model.updatePrompt
@@ -38,6 +41,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.SerializationException
 import java.net.ConnectException
@@ -75,7 +80,25 @@ class MainUseCase(
     }
 
     fun updateWorkflow(workflow: WorkflowFile) {
-        _uiState.update { it.copy(workflow = workflow, modelSlots = emptyList(), modelOverrides = emptyMap()) }
+        _uiState.update {
+            it.copy(
+                workflow = workflow,
+                modelSlots = emptyList(),
+                modelOverrides = emptyMap(),
+                workflowToggles = emptyList(),
+                toggleOverrides = emptyMap()
+            )
+        }
+        saveDraft()
+    }
+
+    /** Flip a boolean input the workflow exposes (key = "nodeId|inputIndex"). */
+    fun setWorkflowToggle(key: String, value: Boolean) {
+        _uiState.update { it.copy(toggleOverrides = it.toggleOverrides + (key to value)) }
+    }
+
+    fun updateNegativePrompt(prompt: String) {
+        _uiState.update { it.copy(negativePrompt = prompt) }
         saveDraft()
     }
 
@@ -218,8 +241,11 @@ class MainUseCase(
         val key = "${state.server}|${state.workflow.name}"
         if (key == slotsKey && state.modelSlots.isNotEmpty()) return
         runCatching {
-            val workflow = loadRawWorkflow()
-            val slots = detectModelSlots(workflow, fluxAPI.fetchObjectInfo())
+            val info = fluxAPI.fetchObjectInfo()
+            val raw = fetchRawGraph()
+            val workflow = raw?.let { WorkflowConverter(info).convert(it) } ?: loadRawWorkflow()
+            val slots = detectModelSlots(workflow, info)
+            val toggles = raw?.let { detectWorkflowToggles(it) } ?: emptyList()
             slotsKey = key
             _uiState.update { state2 ->
                 state2.copy(
@@ -228,7 +254,12 @@ class MainUseCase(
                     // server no longer lists.
                     modelOverrides = state2.modelOverrides.filter { (k, v) ->
                         slots.any { it.key == k && it.options.contains(v) }
-                    }
+                    },
+                    workflowToggles = toggles,
+                    toggleOverrides = state2.toggleOverrides.filterKeys { k ->
+                        toggles.any { it.key == k }
+                    },
+                    supportsNegativePrompt = workflow.negativeTextTargets().isNotEmpty()
                 )
             }
         }.onFailure { e ->
@@ -251,21 +282,32 @@ class MainUseCase(
     }
 
 
+    /** Raw graph JSON of the selected workflow; null when it is not graph format. */
+    private suspend fun fetchRawGraph(): JsonObject? {
+        val workflowConfig = _uiState.value.workflow
+        if (!workflowConfig.isServer) return null
+        val raw = fluxAPI.fetchWorkflowContent(workflowConfig.name)
+        val element = try {
+            ComfyJson.parseToJsonElement(raw)
+        } catch (e: kotlinx.serialization.SerializationException) {
+            throw Exception(decodeFailureReason(raw, "workflow ${workflowConfig.name}", 200), e)
+        }
+        return (element as? JsonObject)?.takeIf { it.containsKey("nodes") }
+    }
+
     /** Parse the currently selected workflow into API form, without patching it. */
-    private suspend fun loadRawWorkflow(): Workflow {
+    private suspend fun loadRawWorkflow(toggleOverrides: Map<String, JsonElement> = emptyMap()): Workflow {
+        fetchRawGraph()?.let { raw ->
+            return WorkflowConverter(fluxAPI.fetchObjectInfo()).convert(raw, toggleOverrides)
+        }
         val workflowConfig = _uiState.value.workflow
         return if (workflowConfig.isServer) {
+            // Already API format (e.g. saved via "Save (Export)").
             val raw = fluxAPI.fetchWorkflowContent(workflowConfig.name)
-            val element = try {
-                ComfyJson.parseToJsonElement(raw)
+            try {
+                ComfyJson.decodeFromString<Workflow>(raw)
             } catch (e: kotlinx.serialization.SerializationException) {
                 throw Exception(decodeFailureReason(raw, "workflow ${workflowConfig.name}", 200), e)
-            }
-            if (element is JsonObject && element.containsKey("nodes")) {
-                WorkflowConverter(fluxAPI.fetchObjectInfo()).convert(element)
-            } else {
-                // Already API format (e.g. saved via "Save (Export)").
-                ComfyJson.decodeFromString(element.toString())
             }
         } else {
             val workflowInput = applicationContext.getWorkflowAsText(workflowConfig)
@@ -283,7 +325,10 @@ class MainUseCase(
             uiState.value.seed
         }
 
-        val workflow = loadRawWorkflow()
+        val toggleJson: Map<String, JsonElement> = uiState.value.toggleOverrides
+            .filterKeys { k -> uiState.value.workflowToggles.any { it.key == k } }
+            .mapValues { JsonPrimitive(it.value) }
+        val workflow = loadRawWorkflow(toggleJson)
         workflow.updateSizeAndBatch(
             width = uiState.value.width,
             height = uiState.value.height,
@@ -295,6 +340,7 @@ class MainUseCase(
         )
         workflow.applyModelOverrides(_uiState.value.modelOverrides)
         workflow.updatePrompt(prompt = uiState.value.prompt.cleanPrompt())
+        workflow.updateNegativePrompt(prompt = uiState.value.negativePrompt.cleanPrompt())
         workflow.updateSeed(seed = seed)
         logStore.trace(
             "client",
@@ -302,6 +348,8 @@ class MainUseCase(
                 "size=${_uiState.value.width}x${_uiState.value.height} batch=${_uiState.value.batchSize}, " +
                 "seed=$seed cfg=${_uiState.value.cfg} steps=${_uiState.value.steps}, " +
                 "prompt-patched-into=${workflow.promptTextTargets()}, " +
+                "negative-patched-into=${workflow.negativeTextTargets()}, " +
+                "switches=${_uiState.value.toggleOverrides}, " +
                 "models=${_uiState.value.modelOverrides}"
         )
         return PromptRequest(fluxAPI.clientId, workflow)
@@ -417,6 +465,7 @@ class MainUseCase(
                 batchSize = draft?.batchSize ?: state.batchSize,
                 cfg = draft?.cfg ?: state.cfg,
                 steps = draft?.steps ?: state.steps,
+                negativePrompt = draft?.negativePrompt ?: state.negativePrompt,
                 workflow = workflow ?: state.workflow,
                 recentPrompts = appSettings.recentPrompts()
             )
@@ -435,6 +484,7 @@ class MainUseCase(
                 batchSize = state.batchSize,
                 cfg = state.cfg,
                 steps = state.steps,
+                negativePrompt = state.negativePrompt,
                 workflowName = state.workflow.name,
                 workflowUri = state.workflow.workflowUri,
                 workflowIsServer = state.workflow.isServer

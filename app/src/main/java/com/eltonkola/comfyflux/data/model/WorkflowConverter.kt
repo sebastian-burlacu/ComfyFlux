@@ -197,7 +197,13 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
         return Node(JsonObject(inputs), cls, Meta(title))
     }
 
-    fun convert(graph: JsonObject): Workflow {
+    /**
+     * Convert a graph-format workflow. [toggleOverrides] maps
+     * "outerNodeId|inputIndex" (see detectWorkflowToggles) to a boolean that
+     * must replace the widget value for that subgraph input slot; applied
+     * before any patching so prompt targeting sees the ACTIVE branch.
+     */
+    fun convert(graph: JsonObject, toggleOverrides: Map<String, JsonElement> = emptyMap()): Workflow {
         val nodes = graph["nodes"] as? JsonArray
             ?: throw IllegalArgumentException("workflow is not a graph (frontend) format")
         val sgMap = (graph["definitions"]?.jsonObject?.get("subgraphs") as? JsonArray)
@@ -215,7 +221,16 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             val sg = sgMap[cls] ?: return@forEach
             val id = n["id"]!!.jsonPrimitive.int
             omaps[id] = sgOutputMap(sg, id.toString(), sgMap)
-            binds[id.toString()] = bindingsFor(n, sg, links, omaps)
+            val bindings = HashMap(bindingsFor(n, sg, links, omaps))
+            // App-side flips of the workflow's own boolean inputs.
+            toggleOverrides.forEach { (key, value) ->
+                val (nodeKey, indexKey) = key.split('|', limit = 2).let { if (it.size == 2) it[0] to it[1] else return@forEach }
+                if (nodeKey == id.toString()) {
+                    val index = indexKey.toIntOrNull() ?: return@forEach
+                    bindings[index] = WFLiteral(value)
+                }
+            }
+            binds[id.toString()] = bindings
         }
 
         // Pass 2: expand every node

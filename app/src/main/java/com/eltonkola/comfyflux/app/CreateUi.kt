@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -375,6 +376,34 @@ fun PromptTab(
             )
         }
 
+        // Only workflows with a real negative-input show this; others derive
+        // the negative from the positive and keep the workflow's own text.
+        if (uiState.supportsNegativePrompt) {
+            TextField(
+                value = uiState.negativePrompt,
+                onValueChange = { newText -> viewModel.updateNegativePrompt(newText) },
+                label = { Text("Negative prompt (optional)") },
+                placeholder = { Text("What to avoid; empty keeps the workflow's own text") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .height(100.dp),
+                minLines = 2,
+                singleLine = false,
+                trailingIcon = {
+                    if (uiState.negativePrompt.isNotEmpty()) {
+                        HelpIconButton(
+                            onClick = { viewModel.updateNegativePrompt("") },
+                            imageVector = Ikona.Clean,
+                            size = 34.dp,
+                            iconSize = 18.dp,
+                            help = "Clear the negative prompt"
+                        )
+                    }
+                }
+            )
+        }
+
         if (uiState.recentPrompts.isNotEmpty()) {
             Text(
                 text = "Recent prompts",
@@ -428,6 +457,45 @@ fun AdvancedTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
         SamplerSettingsSelector(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
         ModelSlotsSelector(uiState = uiState, viewModel = viewModel)
+        Spacer(modifier = Modifier.height(8.dp))
+        WorkflowSwitchesSelector(uiState = uiState, viewModel = viewModel)
+    }
+}
+
+
+@Composable
+fun WorkflowSwitchesSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
+    if (uiState.workflowToggles.isEmpty()) return
+
+    Text(
+        text = "Workflow switches",
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(bottom = 2.dp)
+    )
+    Text(
+        text = "On/off options defined by the workflow itself (prompt enhance, model thinking, ...). They override what is saved in the graph.",
+        fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    uiState.workflowToggles.forEach { toggle ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = toggle.label, fontSize = 14.sp)
+                Text(
+                    text = "Saved in the workflow: ${if (toggle.current) "on" else "off"}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = uiState.toggleOverrides[toggle.key] ?: toggle.current,
+                onCheckedChange = { checked -> viewModel.setWorkflowToggle(toggle.key, checked) }
+            )
+        }
     }
 }
 

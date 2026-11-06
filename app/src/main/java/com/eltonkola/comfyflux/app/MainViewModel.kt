@@ -90,6 +90,14 @@ class MainViewModel(
         mainUseCase.setModelChoice(key, value)
     }
 
+    fun setWorkflowToggle(key: String, value: Boolean) {
+        mainUseCase.setWorkflowToggle(key, value)
+    }
+
+    fun updateNegativePrompt(prompt: String) {
+        mainUseCase.updateNegativePrompt(prompt)
+    }
+
     fun setImageWidth(width: Int) {
         viewModelScope.launch {
             mainUseCase.setImageWidth(width)
