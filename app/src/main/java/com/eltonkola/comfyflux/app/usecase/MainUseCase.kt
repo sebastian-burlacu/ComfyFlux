@@ -426,7 +426,14 @@ class MainUseCase(
         runCatching {
             val info = fluxAPI.fetchObjectInfo()
             val raw = fetchRawGraph()
-            val workflow = raw?.let { WorkflowConverter(info).convert(it) } ?: loadRawWorkflow()
+            val workflow = if (raw != null) {
+                val converter = WorkflowConverter(info)
+                val w = converter.convert(raw)
+                reportSubstitutions(converter)
+                w
+            } else {
+                loadRawWorkflow()
+            }
             val slots = detectModelSlots(workflow, info)
             val toggles = raw?.let { detectWorkflowToggles(it) } ?: emptyList()
             slotsKey = key
@@ -491,10 +498,30 @@ class MainUseCase(
         return (element as? JsonObject)?.takeIf { it.containsKey("nodes") }
     }
 
+    /**
+     * The converter replaces template settings the server cannot provide
+     * (typically model files a template names but this server lacks) with
+     * legal values from the server. That keeps the import working, but the
+     * pairing may not match - name it, so a bad run is explainable.
+     */
+    private fun reportSubstitutions(converter: WorkflowConverter) {
+        converter.substitutions.forEach { s ->
+            logStore.info(
+                "client",
+                "${s.classType} node ${s.nodeId}: '${s.wanted}' is not on this server - " +
+                        "using '${s.used}' for ${s.input}. If the run fails with shape or " +
+                        "dtype errors, install the file the template asks for."
+            )
+        }
+    }
+
     /** Parse the currently selected workflow into API form, without patching it. */
     private suspend fun loadRawWorkflow(toggleOverrides: Map<String, JsonElement> = emptyMap()): Workflow {
         fetchRawGraph()?.let { raw ->
-            return WorkflowConverter(fluxAPI.fetchObjectInfo()).convert(raw, toggleOverrides)
+            val converter = WorkflowConverter(fluxAPI.fetchObjectInfo())
+            val workflow = converter.convert(raw, toggleOverrides)
+            reportSubstitutions(converter)
+            return workflow
         }
         val workflowConfig = _uiState.value.workflow
         return if (workflowConfig.isServer) {

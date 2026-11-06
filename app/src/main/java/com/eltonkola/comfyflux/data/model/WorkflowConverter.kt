@@ -29,6 +29,21 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
 
     private val widgetTypes = setOf("INT", "FLOAT", "STRING", "COMBO", "BOOLEAN")
 
+    /**
+     * Combo values the template asked for but this server cannot provide
+     * (usually model files), and what was used instead. Surfaced so a
+     * mismatched run can be explained instead of failing opaquely.
+     */
+    data class Substitution(
+        val nodeId: String,
+        val classType: String,
+        val input: String,
+        val wanted: String,
+        val used: String
+    )
+
+    val substitutions = mutableListOf<Substitution>()
+
     private data class Spec(val name: String, val type: JsonElement, val opts: JsonObject, val required: Boolean)
 
     private sealed interface WFValue
@@ -325,8 +340,17 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             val v = inputs[s.name] as? JsonPrimitive ?: return@forEach
             if (v.isString && v.content in opts) return@forEach
             val d = s.opts["default"]
-            if (d is JsonPrimitive && d.content in opts) inputs[s.name] = d
-            else inputs[s.name] = JsonPrimitive(opts.first())
+            val used = if (d is JsonPrimitive && d.content in opts) d.content else opts.first()
+            inputs[s.name] = JsonPrimitive(used)
+            if (v.isString && opts.isNotEmpty()) {
+                substitutions += Substitution(
+                    nodeId = "$refPrefix${n["id"]?.jsonPrimitive?.contentOrNull ?: "?"}",
+                    classType = cls,
+                    input = s.name,
+                    wanted = v.content,
+                    used = used
+                )
+            }
         }
 
         val title = n["title"]?.jsonPrimitive?.contentOrNull ?: cls

@@ -46,6 +46,8 @@ opens the share sheet (mail, Drive, chat, wherever). File name is
 | `execution failed: ... CUDA out of memory` | The GPU ran out. Close whatever else owns VRAM or lower resolution/batch. If the text looks like a remote API error (`type=api_error`), it came from a custom node's upstream service, not your machine |
 | `Generation timed out after 15 minutes` | No terminal event within the limit; long video/large workflows may need patience, dead ones need a server restart |
 | `Prompt enrichment failed: HTTP 500 ...` | Groq's hosted model hiccuped; generation is unaffected — retry or type the prompt yourself |
+| `'X.safetensors' is not on this server - using 'Y'` | The template names a model file you don't have. To keep the prompt valid the app substitutes a file your server does list, but the pair may not fit together — that's what shape/dtype errors like `expected input with shape [*3584], but got input of size [1, 3345, 2560]` mean. Download the file the log names, or pick a workflow whose models you actually have |
+| `ignoring unreadable ws event: ...` | One websocket message the app couldn't parse was skipped; the generation on the server is unaffected |
 
 **A generation that fails before reaching the server** (fetch/convert errors)
 never appears in ComfyUI's console at all — no server logs doesn't mean no
