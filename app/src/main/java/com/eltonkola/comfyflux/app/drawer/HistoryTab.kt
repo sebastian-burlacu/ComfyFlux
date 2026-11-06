@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -254,8 +255,14 @@ fun HistoryRowUi(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(text = "Nr: ${item.images.size} success: ${item.success} - completed: ${item.completed}")
-            Spacer(modifier = Modifier.weight(1f))
+            // Takes the leftover width so the keep/discard buttons never
+            // push the summary into a second line on a narrow phone.
+            Text(
+                text = "Nr: ${item.images.size} success: ${item.success} - completed: ${item.completed}",
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             // The phone's own marks; nothing is sent to the server.
             TextButton(onClick = { onMark(if (mark == Triage.Kept) null else Triage.Kept) }) {
                 Text(text = if (mark == Triage.Kept) "★ kept" else "☆ keep", fontSize = 11.sp)
