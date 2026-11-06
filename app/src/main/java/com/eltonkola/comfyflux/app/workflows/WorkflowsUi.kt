@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +50,9 @@ fun WorkflowsUi(
         modifier = Modifier
             .fillMaxSize()
             .padding(8.dp)
+            // Sections used to be fixed panes: with all three expanded the
+            // last one fell off the sheet and nothing could reach it.
+            .verticalScroll(rememberScrollState()),
     ) {
         Text(
             text = "Workflows",
@@ -83,11 +86,9 @@ fun WorkflowsUi(
             onExpand = { samplesOpen = !samplesOpen }
         ) {
 
-            LazyColumn {
-                items(workflows) {
-                    WorkflowRow(it, uiState.workflow == it, onSelect)
-                    Spacer(modifier = Modifier.size(4.dp))
-                }
+            workflows.forEach {
+                WorkflowRow(it, uiState.workflow == it, onSelect)
+                Spacer(modifier = Modifier.size(4.dp))
             }
             Spacer(modifier = Modifier.size(4.dp))
 
@@ -104,11 +105,9 @@ fun WorkflowsUi(
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
-                LazyColumn {
-                    items(uiState.serverWorkflows) {
-                        WorkflowRow(it, uiState.workflow == it, onSelect)
-                        Spacer(modifier = Modifier.size(4.dp))
-                    }
+                uiState.serverWorkflows.forEach {
+                    WorkflowRow(it, uiState.workflow == it, onSelect)
+                    Spacer(modifier = Modifier.size(4.dp))
                 }
             }
             Spacer(modifier = Modifier.size(4.dp))

@@ -206,7 +206,7 @@ fun LocalWorkflows(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(4.dp)
     ) {
         if (hasPermission) {
@@ -259,11 +259,9 @@ fun LocalWorkflows(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            LazyColumn {
-                items(files) {
-                    WorkflowRow(it, uiState.workflow == it, onClick)
-                    Spacer(modifier = Modifier.size(4.dp))
-                }
+            files.forEach {
+                WorkflowRow(it, uiState.workflow == it, onClick)
+                Spacer(modifier = Modifier.size(4.dp))
             }
 
             if (files.isEmpty()) {

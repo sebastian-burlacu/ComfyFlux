@@ -41,6 +41,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -388,6 +389,63 @@ fun PromptTab(
 
         // Only workflows with a real negative-input show this; others derive
         // the negative from the positive and keep the workflow's own text.
+        // img2img: workflows with an image node take a photo from the
+        // phone; it is uploaded to the server on Create and written into
+        // the node automatically. Placed right under the prompt box and
+        // boxed - at the bottom of the tab it was easy to miss.
+        if (uiState.supportsImageInput) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Ikona.Image,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = "This workflow loads an image",
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        OutlinedButton(onClick = { imagePicker.launch("image/*") }) {
+                            Text(
+                                text = if (uiState.inputImageName.isBlank()) "Choose image"
+                                else if (uiState.inputImageName.length > 20) uiState.inputImageName.take(20) + "…"
+                                else uiState.inputImageName,
+                                fontSize = 13.sp
+                            )
+                        }
+                        if (uiState.inputImageUri.isNotEmpty()) {
+                            HelpIconButton(
+                                onClick = { viewModel.setInputImage("") },
+                                imageVector = Ikona.Clean,
+                                size = 34.dp,
+                                iconSize = 18.dp,
+                                help = "Remove the input image"
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (uiState.inputImageUri.isNotEmpty())
+                            "Uploaded to the server when you tap Create; the workflow's image node uses it."
+                        else "Pick one for img2img, or leave unset to use the file saved in the workflow.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            }
+        }
+
         if (uiState.supportsNegativePrompt) {
             TextField(
                 value = uiState.negativePrompt,
@@ -411,49 +469,6 @@ fun PromptTab(
                         )
                     }
                 }
-            )
-        }
-
-        // img2img: workflows with a LoadImage node take a photo from the
-        // phone; it is uploaded to the server on Create and written into
-        // the node automatically.
-        if (uiState.supportsImageInput) {
-            Row(
-                modifier = Modifier.padding(top = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(onClick = { imagePicker.launch("image/*") }) {
-                    Icon(
-                        imageVector = Ikona.Image,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.size(6.dp))
-                    Text(
-                        text = if (uiState.inputImageName.isBlank()) "Choose input image"
-                        else if (uiState.inputImageName.length > 24) uiState.inputImageName.take(24) + "…"
-                        else uiState.inputImageName,
-                        fontSize = 13.sp
-                    )
-                }
-                if (uiState.inputImageUri.isNotEmpty()) {
-                    HelpIconButton(
-                        onClick = { viewModel.setInputImage("") },
-                        imageVector = Ikona.Clean,
-                        size = 34.dp,
-                        iconSize = 18.dp,
-                        help = "Remove the input image"
-                    )
-                }
-            }
-            Text(
-                text = if (uiState.inputImageUri.isNotEmpty())
-                    "Uploaded to the server when you tap Create; the workflow's image node uses it."
-                else "This workflow loads an image - pick one for img2img, or leave unset to use the file saved in the workflow.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
             )
         }
 
