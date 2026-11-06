@@ -666,22 +666,29 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 steps = sliderValues.size
             )
         }
-        Box(modifier = Modifier.size(96.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize(1f)
-                    .defaultMinSize(40.dp, 40.dp)
-                    .aspectRatio(imageSizes[widthIndex].toFloat() / imageSizes[heightIndex].toFloat())
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "${imageSizes[widthIndex]}x${imageSizes[heightIndex]}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
+        // Preview scales its AREA with total pixels (1024x1024 fills the
+        // slot, 256x256 is a quarter of it) so the box shows both the
+        // aspect ratio and how big the output actually is.
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(modifier = Modifier.size(96.dp), contentAlignment = Alignment.Center) {
+                val w = imageSizes[widthIndex]
+                val h = imageSizes[heightIndex]
+                val maxArea = 1024f * 1024f
+                val scale = kotlin.math.sqrt((w * h) / maxArea)
+                val previewH = (96f * scale).coerceAtLeast(28f)
+                val previewW = previewH * w / h
+                Box(
+                    modifier = Modifier
+                        .size(width = previewW.dp, height = previewH.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {}
             }
+            Text(
+                text = "${imageSizes[widthIndex]}x${imageSizes[heightIndex]}",
+                fontSize = 12.sp
+            )
         }
 
     }
