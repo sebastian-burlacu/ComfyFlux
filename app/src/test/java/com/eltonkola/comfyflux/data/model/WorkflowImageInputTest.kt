@@ -37,7 +37,11 @@ class WorkflowImageInputTest {
     }
 
     @Test
-    fun applyInputImagePointsEveryLoadImageAtTheUpload() {
+    fun applyInputImagePatchesOnlyThePrimaryLoadImage() {
+        // Edit templates keep REFERENCE images in extra LoadImage nodes
+        // (the qwen image-edit template loads a portrait and a separate
+        // shirt); overwriting every node with one photo breaks that
+        // premise. Only the lowest-id LoadImage is the workflow's input.
         val wf = json.decodeFromString<Workflow>(graph)
         wf.applyInputImage("phone/IMG_0001.jpg")
 
@@ -46,7 +50,7 @@ class WorkflowImageInputTest {
             wf.getValue("37").inputs.jsonObject["image"]!!.jsonPrimitive.content
         )
         assertEquals(
-            "phone/IMG_0001.jpg",
+            "second.png",
             wf.getValue("60").inputs.jsonObject["image"]!!.jsonPrimitive.content
         )
         // Nothing else moves.

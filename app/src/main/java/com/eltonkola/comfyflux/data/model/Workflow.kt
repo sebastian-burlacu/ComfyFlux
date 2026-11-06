@@ -431,12 +431,20 @@ fun Workflow.updateCfgAndSteps(cfg: Float, steps: Int) {
 fun Workflow.hasImageInput(): Boolean = any { it.value.classType == "LoadImage" }
 
 /**
- * Point every LoadImage at the uploaded file (server name, already
- * subfolder-prefixed when the server put it in a subfolder).
+ * Point the workflow's PRIMARY LoadImage at the uploaded file (server name,
+ * already subfolder-prefixed when the server put it in a subfolder).
+ *
+ * Exactly one node is patched, never all of them: edit templates keep
+ * *reference* images in extra LoadImage nodes (e.g. the qwen image-edit
+ * template loads a portrait and a shirt as two separate references -
+ * overwriting both with the same photo breaks the workflow's premise).
+ * The primary node is conventionally the lowest-id LoadImage.
  */
 fun Workflow.applyInputImage(name: String) {
     if (name.isBlank()) return
-    filterValues { it.classType == "LoadImage" }
+    val primary = filterValues { it.classType == "LoadImage" }
         .keys
-        .forEach { id -> replaceInputs(id, mapOf("image" to JsonPrimitive(name))) }
+        .minByOrNull { it.toIntOrNull() ?: Int.MAX_VALUE }
+        ?: return
+    replaceInputs(primary, mapOf("image" to JsonPrimitive(name)))
 }

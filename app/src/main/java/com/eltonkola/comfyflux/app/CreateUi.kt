@@ -436,7 +436,7 @@ fun PromptTab(
                     }
                     Text(
                         text = if (uiState.inputImageUri.isNotEmpty())
-                            "Uploaded to the server when you tap Create; the workflow's image node uses it."
+                            "Uploaded when you tap Create and written into the workflow's main image input; the size below is matched to its aspect. Other reference images in the workflow keep the template's own files."
                         else "Pick one for img2img, or leave unset to use the file saved in the workflow.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

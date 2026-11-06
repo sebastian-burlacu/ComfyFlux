@@ -171,6 +171,9 @@ class MainViewModel(
 
     fun setInputImage(uriString: String) {
         mainUseCase.setInputImage(uriString)
+        if (uriString.isNotBlank()) {
+            viewModelScope.launch { mainUseCase.adaptSizeToInputImage(uriString) }
+        }
     }
 
     val templateState = mainUseCase.templateState
