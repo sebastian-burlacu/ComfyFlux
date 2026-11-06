@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.eltonkola.comfyflux.components.ExpandableSection
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.WorkflowFile
@@ -34,7 +36,11 @@ import com.eltonkola.comfyflux.ui.theme.ikona.ArrowRight
 import com.eltonkola.comfyflux.ui.theme.ikona.WorkflowIc
 
 @Composable
-fun WorkflowsUi(onSelect: (WorkflowFile) -> Unit, uiState: ImageGenerationUiState) {
+fun WorkflowsUi(
+    onSelect: (WorkflowFile) -> Unit,
+    uiState: ImageGenerationUiState,
+    onBrowseTemplates: () -> Unit
+) {
 
     var samplesOpen by remember { mutableStateOf(true) }
     var serverOpen by remember { mutableStateOf(true) }
@@ -54,6 +60,21 @@ fun WorkflowsUi(onSelect: (WorkflowFile) -> Unit, uiState: ImageGenerationUiStat
             text = "Select a workflow to generate images with.",
             style = MaterialTheme.typography.bodyLarge
         )
+        Spacer(modifier = Modifier.size(8.dp))
+
+        // Public Comfy-Org template library; imports save to the server.
+        OutlinedButton(
+            onClick = onBrowseTemplates,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(text = "Browse Comfy-Org templates", fontSize = 14.sp)
+            Spacer(modifier = Modifier.size(6.dp))
+            Icon(
+                imageVector = Ikona.ArrowRight,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+        }
         Spacer(modifier = Modifier.size(8.dp))
 
         ExpandableSection(

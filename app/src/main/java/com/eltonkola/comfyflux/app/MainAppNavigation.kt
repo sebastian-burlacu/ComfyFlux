@@ -10,6 +10,7 @@ import androidx.navigation.compose.rememberNavController
 import com.eltonkola.comfyflux.app.imageviewer.PhotoViewerScreen
 import com.eltonkola.comfyflux.app.logs.LogsScreen
 import com.eltonkola.comfyflux.app.settings.SettingsScreen
+import com.eltonkola.comfyflux.app.templates.TemplatesScreen
 import com.eltonkola.comfyflux.ui.theme.ComfyFluxTheme
 import org.koin.androidx.compose.koinViewModel
 
@@ -17,7 +18,8 @@ enum class AppScreens(val screenName: String) {
     Main("mainScreen"),
     ImageViewer("imageViewerScreen"),
     Settings("settingsScreen"),
-    Logs("logsScreen");
+    Logs("logsScreen"),
+    Templates("templatesScreen");
 }
 
 @Composable
@@ -54,6 +56,9 @@ fun ComfyFluxApp(
             }
             composable(AppScreens.Logs.screenName) {
                 LogsScreen(navController)
+            }
+            composable(AppScreens.Templates.screenName) {
+                TemplatesScreen(viewModel, navController)
             }
         }
     }

@@ -242,6 +242,9 @@ fun MainAppScreen(
                 leftContent = {
                     WorkflowsUi(
                         uiState = uiState,
+                        onBrowseTemplates = {
+                            navController.navigate(AppScreens.Templates.screenName)
+                        },
                         onSelect = {
                             viewModel.updateWorkflow(it)
                             scope.launch {
