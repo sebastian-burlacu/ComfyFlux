@@ -144,6 +144,62 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
 
     private data class Link(val id: Int, val o: Int, val os: Int, val t: Int, val ts: Int)
 
+    /**
+     * Frontend node modes the API never sees: mode 2 = MUTED (node is left
+     * out of the prompt), mode 4 = BYPASSED (each output slot passes the
+     * same-NAMED input slot straight through). The web UI resolves both at
+     * graphToPrompt time; we must do the same or a muted/bypassed node runs
+     * anyway or dangles.
+     */
+    private fun modeOf(n: JsonObject): Int = n["mode"]?.jsonPrimitive?.intOrNull ?: 0
+
+    /**
+     * For every bypassed (mode 4) node: (nodeId, outputSlot) -> the upstream
+     * (nodeId, outputSlot) its same-named input is fed by, following chains
+     * of further bypassed nodes. Null target means the pass-through has no
+     * source: downstream inputs must fall back to widgets/defaults.
+     */
+    private fun bypassChains(nodes: JsonArray, links: Map<Int, Link>): Map<Pair<Int, Int>, Pair<Int, Int>?> {
+        val byId = HashMap<Int, JsonObject>()
+        nodes.forEach { el -> (el as? JsonObject)?.let { n ->
+            n["id"]?.jsonPrimitive?.intOrNull?.let { byId[it] = n }
+        } }
+        val bypassed = byId.filterValues { modeOf(it) == 4 }.keys
+
+        // (node, inputSlotIndex-with-name-or-fallback) source per bypass node
+        fun inputSource(node: JsonObject, outName: String?, outSlot: Int): Pair<Int, Int>? {
+            val slots = (node["inputs"] as? JsonArray)?.map { it.jsonObject } ?: emptyList()
+            val slot = slots.firstOrNull { s ->
+                outName != null && s["name"]?.jsonPrimitive?.contentOrNull == outName
+            } ?: slots.getOrNull(outSlot) ?: slots.firstOrNull()
+            val linkId = slot?.get("link")?.jsonPrimitive?.intOrNull ?: return null
+            val lk = links[linkId] ?: return null
+            return lk.o to lk.os
+        }
+
+        val out = HashMap<Pair<Int, Int>, Pair<Int, Int>?>()
+        val memo = HashMap<Pair<Int, Int>, Pair<Int, Int>?>()
+        fun resolve(nodeId: Int, outSlot: Int, depth: Int): Pair<Int, Int>? {
+            val key = nodeId to outSlot
+            memo[key]?.let { return it }
+            if (depth > 16) return null
+            val node = byId[nodeId] ?: return null
+            val outDefs = (node["outputs"] as? JsonArray)?.map { it.jsonObject }
+            val outName = outDefs?.getOrNull(outSlot)?.get("name")?.jsonPrimitive?.contentOrNull
+            val src = inputSource(node, outName, outSlot) ?: run { memo[key] = null; return null }
+            // Chain through further bypassed nodes.
+            val resolved = if (src.first in bypassed) resolve(src.first, src.second, depth + 1) else src
+            memo[key] = resolved
+            return resolved
+        }
+        bypassed.forEach { id ->
+            val node = byId.getValue(id)
+            val outCount = ((node["outputs"] as? JsonArray)?.size ?: 1).coerceAtLeast(1)
+            for (slot in 0 until outCount) out[id to slot] = resolve(id, slot, 0)
+        }
+        return out
+    }
+
     private fun linkMap(links: JsonElement?): Map<Int, Link> {
         val out = HashMap<Int, Link>()
         (links as? JsonArray)?.forEach { l -> normLink(l)?.let { out[it.id] = it } }
@@ -206,6 +262,7 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
         refPrefix: String,
         links: Map<Int, Link>,
         bindings: Map<Int, WFValue?>?,
+        bypass: Map<Pair<Int, Int>, Pair<Int, Int>?> = emptyMap(),
     ): Node<JsonElement>? {
         val cls = n["type"]?.jsonPrimitive?.contentOrNull ?: return null
         val sp = specs(cls) ?: return null  // not executable (MarkdownNote etc.)
@@ -216,8 +273,12 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             val name = slot["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
             val linkId = slot["link"]?.jsonPrimitive?.intOrNull ?: return@forEach
             val lk = links[linkId] ?: return@forEach
-            val src: WFValue? = if (lk.o == -10) bindings?.get(lk.os)
-            else WFRef(refPrefix + lk.o, lk.os)
+            val eff = bypass[lk.o to lk.os] ?: (lk.o to lk.os)
+            val src: WFValue? = when {
+                lk.o == -10 -> bindings?.get(lk.os)
+                eff in bypass -> null   // chain of bypasses ended with no source
+                else -> WFRef(refPrefix + eff.first, eff.second)
+            }
             when (src) {
                 is WFRef -> inputs[name] = buildJsonArray { add(JsonPrimitive(src.api)); add(JsonPrimitive(src.slot)) }
                 is WFLiteral -> if (src.v != JsonNull) inputs[name] = src.v
@@ -287,6 +348,7 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             ?.toMap()
             ?: emptyMap()
         val links = linkMap(graph["links"])
+        val bypass = bypassChains(nodes, links)
         val w = Workflow()
 
         // Pass 1: subgraph instances -> output maps + input bindings
@@ -315,20 +377,27 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             val n = el.jsonObject
             val cls = n["type"]?.jsonPrimitive?.contentOrNull ?: return@forEach
             val id = n["id"]?.jsonPrimitive?.intOrNull ?: return@forEach
+            if (modeOf(n) == 2 || modeOf(n) == 4) return@forEach
             val sg = sgMap[cls]
             if (sg != null) {
                 val p = id.toString()
+                val innerNodes = sg["nodes"] as JsonArray
                 val innerLinks = linkMap(sg["links"])
-                (sg["nodes"] as JsonArray).forEach { innerEl ->
+                val innerBypass = bypassChains(innerNodes, innerLinks)
+                innerNodes.forEach { innerEl ->
                     val inner = innerEl.jsonObject
                     val innerCls = inner["type"]?.jsonPrimitive?.contentOrNull
                     if (sgMap.containsKey(innerCls)) {
                         throw IllegalArgumentException("nested subgraphs are not supported")
                     }
-                    nodeEntry(inner, "${p}_", innerLinks, binds[p])?.let { inner["id"]?.jsonPrimitive?.intOrNull?.let { innerId -> w["${p}_$innerId"] = it } }
+                    if (modeOf(inner) == 2 || modeOf(inner) == 4) return@forEach
+                    inner["id"]?.jsonPrimitive?.intOrNull?.let { innerId ->
+                        nodeEntry(inner, "${p}_", innerLinks, binds[p], innerBypass)
+                            ?.let { w["${p}_$innerId"] = it }
+                    }
                 }
             } else {
-                nodeEntry(n, "", links, null)?.let { w[id.toString()] = it }
+                nodeEntry(n, "", links, null, bypass)?.let { w[id.toString()] = it }
             }
         }
 
@@ -342,9 +411,13 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
                         val slot = value[1].jsonPrimitive.intOrNull
                         val omap = srcId?.toIntOrNull()?.let { omaps[it] }
                         if (omap != null && slot != null) {
-                            val t = omapTarget(omap, slot)
-                                ?: throw IllegalArgumentException("node $id.$key references unresolved subgraph output $srcId[$slot]")
-                            put(key, buildJsonArray { add(JsonPrimitive(t.first)); add(JsonPrimitive(t.second)) })
+                            // Muted/unknown inner nodes can leave an instance
+                            // output unbacked: drop the ref (the integrity
+                            // pass below backfills defaults) instead of
+                            // failing the entire workflow.
+                            omapTarget(omap, slot)?.let { t ->
+                                put(key, buildJsonArray { add(JsonPrimitive(t.first)); add(JsonPrimitive(t.second)) })
+                            }
                             return@forEach
                         }
                     }
@@ -354,16 +427,30 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             w[id] = node.copy(inputs = updated)
         }
 
-        // Integrity: every link target must exist in the result.
+        // Integrity: refs into nodes that never reached the prompt
+        // (uninstalled custom classes, muted sources, bypass chains with no
+        // input) are DROPPED - one missing pack must not make a whole
+        // template unusable. Required widget inputs left behind get their
+        // declared defaults, same rules as the per-node pass in nodeEntry.
         w.forEach { (id, node) ->
-            node.inputs.jsonObject.forEach { (key, value) ->
-                if (value is JsonArray && value.size == 2 && value[0].jsonPrimitive.isString) {
-                    val target = value[0].jsonPrimitive.content
-                    if (!w.containsKey(target)) {
-                        throw IllegalArgumentException("node $id.$key references missing node $target")
-                    }
+            val dangling = node.inputs.jsonObject.entries
+                .filter { (_, value) ->
+                    value is JsonArray && value.size == 2 && value[0].jsonPrimitive.isString &&
+                        !w.containsKey(value[0].jsonPrimitive.content)
+                }
+                .map { it.key }
+            if (dangling.isEmpty()) return@forEach
+            val inputs = LinkedHashMap(node.inputs.jsonObject)
+            dangling.forEach { inputs.remove(it) }
+            specs(node.classType)?.forEach { spec ->
+                if (!spec.required || inputs.containsKey(spec.name)) return@forEach
+                if (spec.opts["socketless"]?.jsonPrimitive?.booleanOrNull == true) {
+                    inputs[spec.name] = JsonPrimitive(true)
+                } else if (isWidget(spec)) {
+                    spec.opts["default"]?.let { if (it != JsonNull) inputs[spec.name] = it }
                 }
             }
+            w[id] = node.copy(inputs = JsonObject(inputs))
         }
         return w
     }

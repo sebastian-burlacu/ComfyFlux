@@ -32,6 +32,67 @@ class WorkflowConverterTest {
 
     private fun inputs(w: Workflow, id: String) = w.getValue(id).inputs.jsonObject
 
+    private val modeInfo: JsonObject by lazy {
+        json.parseToJsonElement(
+            """{
+              "Src":   {"input": {"required": {"seed": ["INT", {"default": 1}]}}},
+              "Mid":   {"input": {"required": {"image": ["IMAGE", {}]}}},
+              "Sink":  {"input": {"required": {
+                "image": ["IMAGE", {}],
+                "prefix": ["STRING", {"default": "def"}]
+              }}}
+            }"""
+        ).jsonObject
+    }
+
+    private fun modeGraph(midType: String, midMode: Int) = json.parseToJsonElement(
+        """{
+          "nodes": [
+            {"id": 1, "type": "Src", "mode": 0, "widgets_values": [7],
+             "outputs": [{"name": "IMAGE", "links": [11]}]},
+            {"id": 2, "type": "$midType", "mode": $midMode,
+             "inputs": [{"name": "image", "link": 11}],
+             "outputs": [{"name": "IMAGE", "links": [12]}]},
+            {"id": 3, "type": "Sink", "mode": 0,
+             "inputs": [{"name": "image", "link": 12}],
+             "widgets_values": ["out"]}
+          ],
+          "links": [[11, 1, 0, 2, 0, "IMAGE"], [12, 2, 0, 3, 0, "IMAGE"]]
+        }"""
+    ).jsonObject
+
+    @Test
+    fun bypassedNodeIsRoutedAroundNotSent() {
+        // mode 4 = BYPASSED: the web UI forwards the same-named input past
+        // the node; the API prompt must never contain it.
+        val w = WorkflowConverter(modeInfo).convert(modeGraph("Mid", 4))
+        assertEquals(setOf("1", "3"), w.keys)
+        assertEquals(
+            listOf("1", "0"),
+            inputs(w, "3").getValue("image").jsonArray.map { it.jsonPrimitive.content }
+        )
+    }
+
+    @Test
+    fun mutedNodeIsDroppedAndDownstreamFallsBackToDefaults() {
+        // mode 2 = MUTED: node excluded; the dangling link into Sink is
+        // pruned and required widget inputs get their spec defaults.
+        val w = WorkflowConverter(modeInfo).convert(modeGraph("Mid", 2))
+        assertEquals(setOf("1", "3"), w.keys)
+        assertTrue("image" !in inputs(w, "3"))
+        assertEquals("out", inputs(w, "3").getValue("prefix").jsonPrimitive.content)
+    }
+
+    @Test
+    fun unknownNodeClassDegradesInsteadOfFailingTheWorkflow() {
+        // One missing custom pack must not kill the whole template: the node
+        // is stripped, the ref into it dropped, defaults backfilled.
+        val w = WorkflowConverter(modeInfo).convert(modeGraph("NoSuchPack", 0))
+        assertEquals(setOf("1", "3"), w.keys)
+        assertTrue("image" !in inputs(w, "3"))
+        assertEquals("out", inputs(w, "3").getValue("prefix").jsonPrimitive.content)
+    }
+
     @Test
     fun dynamicComboMainAndSubWidgetsKeepValueAlignment() {
         // Combo-like custom types (COMFY_DYNAMICCOMBO_V3) are widgets and the
