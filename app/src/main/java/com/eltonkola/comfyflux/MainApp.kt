@@ -2,7 +2,11 @@ package com.eltonkola.comfyflux
 
 import android.app.Application
 import android.content.Context
+import coil.Coil
 import com.eltonkola.comfyflux.app.MainViewModel
+import com.eltonkola.comfyflux.app.galleryImageLoader
+import com.eltonkola.comfyflux.app.presets.PresetStore
+import com.eltonkola.comfyflux.app.presets.PresetUseCase
 import com.eltonkola.comfyflux.app.usecase.HistoryUseCase
 import com.eltonkola.comfyflux.app.usecase.ImageViewerUseCase
 import com.eltonkola.comfyflux.app.usecase.MainUseCase
@@ -12,6 +16,7 @@ import com.eltonkola.comfyflux.app.usecase.TimerUseCase
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.AppState
 import com.eltonkola.comfyflux.data.LogStore
+import com.eltonkola.comfyflux.data.model.TriageStore
 import com.eltonkola.comfyflux.data.Notifier
 import com.eltonkola.comfyflux.data.PromptRepo
 import com.eltonkola.comfyflux.data.network.FluxAPI
@@ -39,6 +44,10 @@ class MainApp : Application(), KoinComponent {
             modules(appModule)
         }
 
+        // One Coil loader for every screen: shared memory + disk cache, so a
+        // history image seen once never hits the network again.
+        Coil.setImageLoader(galleryImageLoader(this))
+
         // Track foreground/background so finished generations can notify when the
         // app is not in front.
         val appState: AppState = get()
@@ -62,6 +71,7 @@ private val appModule = module {
     singleOf(::PromptRepo)
     singleOf(::FluxAPI)
     singleOf(::PromptSearchUseCase)
+    singleOf(::TriageStore)
     singleOf(::HistoryUseCase)
     singleOf(::ImageViewerUseCase)
     singleOf(::QueueUseCase)
@@ -74,6 +84,10 @@ private val appModule = module {
         androidContext().getSharedPreferences("AppSettingsPrefs", Context.MODE_PRIVATE)
     }
     singleOf(::AppSettings)
+
+    // User prompt presets live in their own prefs file, away from AppSettings.
+    single { PresetStore(androidContext()) }
+    singleOf(::PresetUseCase)
 
 
 //          AppSettings(get())

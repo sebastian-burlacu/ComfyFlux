@@ -43,6 +43,44 @@ class ModelSlotsTest {
     )
 
     @Test
+    fun loraStrengthsComeWithTheirSlotAndRange() {
+        val info = json.parseToJsonElement(
+            """{"LoraLoader": {"input": {"required": {
+                "model": ["MODEL"], "clip": ["CLIP"],
+                "lora_name": [["anime.safetensors", "detail.safetensors"], {}],
+                "strength_model": ["FLOAT", {"default": 1.0, "min": -100.0, "max": 100.0, "step": 0.01}],
+                "strength_clip": ["FLOAT", {"default": 1.0, "min": -100.0, "max": 100.0, "step": 0.01}]
+            }}}}"""
+        ).jsonObject
+        val wf = json.decodeFromString<Workflow>(
+            """{"21": {"class_type": "LoraLoader", "inputs": {
+                "model": ["1", 0], "clip": ["1", 1], "lora_name": "anime.safetensors",
+                "strength_model": 0.8, "strength_clip": 1.0}}}"""
+        )
+        val slot = detectModelSlots(wf, info).single()
+        assertEquals(listOf("strength_model", "strength_clip"), slot.strengths.map { it.input })
+        assertEquals(0.8f, slot.strengths.first().current, 0.0001f)
+        // the server range is -100..100; the draggable window is not
+        assertEquals(-1f..2f, slot.strengths.first().range(null))
+        assertEquals(-1f..2.4f, slot.strengths.first().range(2.4f))
+
+        wf.applyStrengthOverrides(mapOf("21|strength_model" to 1.35f))
+        assertEquals(1.35f, wf["21"]!!.inputs.jsonObject["strength_model"]!!.jsonPrimitive.content.toFloat(), 0.0001f)
+        // linked model/clip inputs are never touched by a strength write
+        assertEquals("anime.safetensors", wf["21"]!!.inputs.jsonObject["lora_name"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun strengthWritesSkipLinkedOrUnknownNodes() {
+        val wf = json.decodeFromString<Workflow>(
+            """{"21": {"class_type": "LoraLoader", "inputs": {"strength_model": ["20", 0]}}}"""
+        )
+        wf.applyStrengthOverrides(mapOf("21|strength_model" to 0.5f, "99|strength_model" to 0.5f))
+        val value = wf["21"]!!.inputs.jsonObject["strength_model"]
+        assertTrue("linked strength must stay a link", value is kotlinx.serialization.json.JsonArray)
+    }
+
+    @Test
     fun server043ComboFormIsOfferedToo() {
         // ComfyUI 0.43 moved option lists into the metadata object for some
         // loaders (TripleCLIPLoader, UpscaleModelLoader, ...). Missing that

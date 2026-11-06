@@ -31,6 +31,7 @@ import com.eltonkola.comfyflux.data.model.applyResolutionSize
 import com.eltonkola.comfyflux.data.model.applySamplerChoices
 import com.eltonkola.comfyflux.data.model.fitToAspect
 import com.eltonkola.comfyflux.data.model.SIZE_STEPS
+import com.eltonkola.comfyflux.data.model.applyStrengthOverrides
 import com.eltonkola.comfyflux.data.model.detectModelSlots
 import com.eltonkola.comfyflux.data.model.negativeTextTargets
 import com.eltonkola.comfyflux.data.model.updateNegativePrompt
@@ -184,6 +185,18 @@ class MainUseCase(
     fun setSteps(steps: Int) {
         _uiState.update { it.copy(steps = steps) }
         saveDraft()
+    }
+
+    /**
+     * Strength for one of the widgets beside a model slot
+     * ("nodeId|strength_model"); null = the workflow's own value.
+     */
+    fun setStrength(key: String, value: Float?) {
+        _uiState.update { state ->
+            val map = state.strengthOverrides.toMutableMap()
+            if (value == null) map.remove(key) else map[key] = value
+            state.copy(strengthOverrides = map)
+        }
     }
 
     /** null = leave the sampler name the workflow saved. */
@@ -503,6 +516,9 @@ class MainUseCase(
                     modelOverrides = state2.modelOverrides.filter { (k, v) ->
                         slots.any { it.key == k && it.options.contains(v) }
                     },
+                    strengthOverrides = state2.strengthOverrides.filter { (k, _) ->
+                        slots.any { slot -> slot.strengths.any { slot.strengthKey(it) == k } }
+                    },
                     workflowToggles = toggles,
                     toggleOverrides = state2.toggleOverrides.filterKeys { k ->
                         toggles.any { it.key == k }
@@ -645,6 +661,7 @@ class MainUseCase(
                 workflow.applyResolutionSize(slot.nodeId, aspect, megapixels)
             }
         }
+        workflow.applyStrengthOverrides(_uiState.value.strengthOverrides)
         workflow.applySamplerChoices(
             sampler = _uiState.value.samplerChoice,
             scheduler = _uiState.value.schedulerChoice,
@@ -662,6 +679,7 @@ class MainUseCase(
                 "negative-patched-into=${workflow.negativeTextTargets()}, " +
                 "switches=${_uiState.value.toggleOverrides}, " +
                 "models=${_uiState.value.modelOverrides}, " +
+                "strengths=${_uiState.value.strengthOverrides}, " +
                 "sampler=${_uiState.value.samplerChoice} scheduler=${_uiState.value.schedulerChoice} " +
                 "denoise=${_uiState.value.denoise} aspect=${_uiState.value.aspectChoice}"
         )

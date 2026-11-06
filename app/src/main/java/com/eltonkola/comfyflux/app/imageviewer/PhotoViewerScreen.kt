@@ -32,7 +32,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import coil.Coil
 import coil.compose.AsyncImage
+import com.eltonkola.comfyflux.app.prefetchNeighbours
 import com.eltonkola.comfyflux.R
 import com.eltonkola.comfyflux.app.MainViewModel
 import com.eltonkola.comfyflux.ui.theme.Ikona
@@ -128,6 +130,9 @@ fun PhotoViewerScreen(
 
             LaunchedEffect(key1 = image) {
                 currentImageUrl = uiState.images[image]
+                // Warm the neighbours while this page is up, so a swipe
+                // shows an already-downloaded picture.
+                prefetchNeighbours(Coil.imageLoader(context), context, uiState.images, image)
             }
 
             Box(

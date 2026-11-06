@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -18,12 +19,42 @@ data class ModelSlot(
     val input: String,
     val current: String,
     val options: List<String>,
+    /** Strength widgets sitting next to this file choice (LoRA strength...). */
+    val strengths: List<StrengthSlot> = emptyList(),
 ) {
     /** Key for the override map: unique per node input. */
     val key: String get() = "$nodeId|$input"
 
+    /** Key for the strength override map ("nodeId|strength_model"). */
+    fun strengthKey(strength: StrengthSlot) = "$nodeId|${strength.input}"
+
     val label: String get() = SLOT_LABELS[classType] ?: classType
 }
+
+/**
+ * A strength float the node offers, with the range the server declares.
+ * ComfyUI advertises -100..100 for LoRA strength, which is technically true
+ * and useless as a slider, so the UI picks a usable window around the
+ * workflow's own value (see strengthRange).
+ */
+data class StrengthSlot(
+    val input: String,
+    val label: String,
+    val current: Float,
+    val min: Float,
+    val max: Float
+) {
+    /** Slider bounds: the server range, narrowed to something draggable. */
+    fun range(override: Float?): ClosedFloatingPointRange<Float> {
+        val values = listOf(current, override ?: current)
+        val lo = minOf(-1f, values.minOrNull() ?: 0f).coerceAtLeast(min)
+        val hi = maxOf(2f, values.maxOrNull() ?: 1f).coerceAtMost(max)
+        return if (hi > lo) lo..hi else 0f..1f
+    }
+}
+
+// Strength widgets the app exposes beside a model file choice.
+private val STRENGTH_INPUTS = mapOf("strength_model" to "model", "strength_clip" to "CLIP")
 
 // Input names that hold model files. Anything not in this set is a graph
 // choice we deliberately do not touch (samplers, schedulers, node toggles).
@@ -86,7 +117,7 @@ fun detectModelSlots(workflow: Workflow, objectInfo: JsonObject): List<ModelSlot
                 val options = descriptor.comboOptions() ?: return@mapNotNull null
                 val value = current[name]?.jsonPrimitiveOrNull?.takeIf { it.isString }
                     ?.content ?: ""
-                ModelSlot(id, node.classType, name, value, options)
+                ModelSlot(id, node.classType, name, value, options, nodeStrengths(inputs, current))
             }
         }.takeIf { it.isNotEmpty() }
     }.flatten().sortedWith(
@@ -94,6 +125,26 @@ fun detectModelSlots(workflow: Workflow, objectInfo: JsonObject): List<ModelSlot
         compareBy({ slotOrder(it.classType) }, { it.nodeId.toIntOrNull() ?: 0 }, { it.input })
     )
 }
+
+/**
+ * The strength widgets of a node: only when the node itself has the input as
+ * a live number (a linked value belongs to its source node) and the server
+ * declares a range for it.
+ */
+private fun nodeStrengths(groups: List<JsonObject>, current: JsonObject): List<StrengthSlot> =
+    STRENGTH_INPUTS.mapNotNull { (name, label) ->
+        if (current[name] !is JsonPrimitive) return@mapNotNull null
+        val spec = groups.firstOrNull { it.containsKey(name) }?.get(name)
+        val meta = ((spec as? JsonArray)?.getOrNull(1)) as? JsonObject ?: return@mapNotNull null
+        val value = (current[name] as JsonPrimitive).contentOrNull?.toFloatOrNull() ?: 1f
+        StrengthSlot(
+            input = name,
+            label = label,
+            current = value,
+            min = meta["min"]?.jsonPrimitiveOrNull?.contentOrNull?.toFloatOrNull() ?: -100f,
+            max = meta["max"]?.jsonPrimitiveOrNull?.contentOrNull?.toFloatOrNull() ?: 100f
+        )
+    }
 
 private val SLOT_ORDER = listOf(
     "CheckpointLoaderSimple", "CheckpointLoader",
@@ -124,6 +175,24 @@ fun Workflow.applyModelOverrides(overrides: Map<String, String>) {
         if (parts.size != 2) return@forEach
         val (id, input) = parts
         if (input !in MODEL_INPUTS) return@forEach
+        replaceInputs(id, mapOf(input to JsonPrimitive(value)))
+    }
+}
+
+/**
+ * Strength overrides, keyed like the model overrides ("nodeId|strength_model").
+ * Kept separate from applyModelOverrides on purpose: that one is gated on
+ * file-input names, and a strength is not a file. Unknown ids, linked values
+ * and inputs the node does not have are ignored.
+ */
+fun Workflow.applyStrengthOverrides(overrides: Map<String, Float>) {
+    overrides.forEach { (key, value) ->
+        val parts = key.split('|', limit = 2)
+        if (parts.size != 2) return@forEach
+        val (id, input) = parts
+        if (input !in STRENGTH_INPUTS) return@forEach
+        val node = this[id] ?: return@forEach
+        if (node.inputs.jsonObject[input] !is JsonPrimitive) return@forEach
         replaceInputs(id, mapOf(input to JsonPrimitive(value)))
     }
 }

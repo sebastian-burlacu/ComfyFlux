@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import com.eltonkola.comfyflux.app.presets.PromptPresetsSection
 import com.eltonkola.comfyflux.data.model.SIZE_STEPS
 import com.eltonkola.comfyflux.data.model.nearestAspect
 import androidx.compose.foundation.layout.Box
@@ -434,6 +435,13 @@ fun PromptTab(
             )
         }
 
+        // Saved prompts of your own: tags, favorites, one tap to put a
+        // proven prompt back in the box.
+        PromptPresetsSection(
+            currentText = uiState.prompt,
+            onApply = { text -> viewModel.updatePrompt(text) }
+        )
+
         // Only workflows with a real negative-input show this; others derive
         // the negative from the positive and keep the workflow's own text.
         // img2img: workflows with an image node take a photo from the
@@ -632,6 +640,36 @@ fun ModelSlotsSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel
                                 expanded = false
                                 viewModel.setModelChoice(slot.key, option)
                             }
+                        )
+                    }
+                }
+            }
+
+            // LoRA strength next to the file it belongs to, so "too strong"
+            // is fixable without opening the graph.
+            slot.strengths.forEach { strength ->
+                val key = slot.strengthKey(strength)
+                val override = uiState.strengthOverrides[key]
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Slider(
+                        value = (override ?: strength.current).coerceIn(
+                            strength.range(override).start, strength.range(override).endInclusive
+                        ),
+                        onValueChange = { viewModel.setStrength(key, it) },
+                        valueRange = strength.range(override),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "%.2f".format(override ?: strength.current),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 6.dp)
+                    )
+                }
+                if (override != null) {
+                    TextButton(onClick = { viewModel.setStrength(key, null) }) {
+                        Text(
+                            text = "Use the workflow's ${strength.label} strength",
+                            fontSize = 11.sp
                         )
                     }
                 }

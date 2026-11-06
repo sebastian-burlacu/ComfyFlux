@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
@@ -53,7 +54,9 @@ fun ImageGrid(images: List<String>, onZoom: (String) -> Unit) {
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(2.dp)),
-                    model = images[index],
+                    // Tiles are small; decoding ten full-resolution PNGs at
+                    // once is what makes the preview grid stutter.
+                    model = thumbnailRequest(LocalContext.current, images[index], 512),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                 )

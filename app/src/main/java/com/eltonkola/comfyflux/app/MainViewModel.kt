@@ -135,6 +135,10 @@ class MainViewModel(
         mainUseCase.setSteps(steps)
     }
 
+    fun setStrength(key: String, value: Float?) {
+        mainUseCase.setStrength(key, value)
+    }
+
     fun setSamplerChoice(name: String?) {
         mainUseCase.setSamplerChoice(name)
     }
@@ -273,6 +277,27 @@ class MainViewModel(
     fun deleteHistory(id: String) {
         viewModelScope.launch {
             fluxAPI.deleteHistory(id)
+            historyUseCase.forgetTriage(listOf(id))
+            loadHistory(silentUpdate = true)
+        }
+    }
+
+    /** Keep / discard on the phone; nothing is sent to the server. */
+    fun setTriage(id: String, mark: com.eltonkola.comfyflux.data.model.Triage?) {
+        historyUseCase.setTriage(id, mark)
+    }
+
+    fun setTriageFilter(filter: com.eltonkola.comfyflux.data.model.TriageFilter) {
+        historyUseCase.setTriageFilter(filter)
+    }
+
+    /** Server delete for everything marked discarded, then forget the marks. */
+    fun deleteDiscarded() {
+        val ids = historyUseCase.discardedIds()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            ids.forEach { fluxAPI.deleteHistory(it) }
+            historyUseCase.forgetTriage(ids)
             loadHistory(silentUpdate = true)
         }
     }

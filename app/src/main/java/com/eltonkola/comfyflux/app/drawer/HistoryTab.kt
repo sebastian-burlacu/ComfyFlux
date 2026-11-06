@@ -18,7 +18,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -45,8 +48,13 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.eltonkola.comfyflux.app.AppScreens
 import com.eltonkola.comfyflux.app.MainViewModel
+import com.eltonkola.comfyflux.app.thumbnailRequest
 import com.eltonkola.comfyflux.components.LoadingUi
 import com.eltonkola.comfyflux.data.model.HistoryItem
+import com.eltonkola.comfyflux.data.model.Triage
+import com.eltonkola.comfyflux.data.model.TriageFilter
+import com.eltonkola.comfyflux.data.model.filterHistory
+import com.eltonkola.comfyflux.data.model.triageCounts
 import com.eltonkola.comfyflux.data.model.runParams
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Copy
@@ -112,12 +120,57 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
                 if (uiState.history.isEmpty()) {
                     Text(text = "No History. Start creating something!")
                 } else {
+                    val visible = filterHistory(uiState.history, uiState.triage, uiState.triageFilter)
+                    var confirmDiscard by remember { mutableStateOf(false) }
+
+                    TriageFilterBar(
+                        counts = triageCounts(uiState.history, uiState.triage),
+                        selected = uiState.triageFilter,
+                        discarded = uiState.triage.values.count { it == Triage.Discarded },
+                        onSelect = { viewModel.setTriageFilter(it) },
+                        onDeleteDiscarded = { confirmDiscard = true }
+                    )
+                    if (confirmDiscard) {
+                        AlertDialog(
+                            onDismissRequest = { confirmDiscard = false },
+                            title = { Text("Delete the discarded runs?") },
+                            text = {
+                                Text(
+                                    "Everything marked discarded is deleted on the server " +
+                                            "(its images too). Your kept and unmarked runs stay."
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        confirmDiscard = false
+                                        viewModel.deleteDiscarded()
+                                    }
+                                ) { Text("Delete") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { confirmDiscard = false }) { Text("Keep them") }
+                            }
+                        )
+                    }
+
+                    if (visible.isEmpty()) {
+                        Text(
+                            text = when (uiState.triageFilter) {
+                                TriageFilter.Kept -> "Nothing marked kept yet - tap the star on a run you want to keep."
+                                TriageFilter.Discarded -> "Nothing marked discarded. Mark the bad ones, then delete them in one go."
+                                TriageFilter.Unmarked -> "Every run here is marked."
+                                TriageFilter.All -> "No History. Start creating something!"
+                            },
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
 
                     LazyColumn(
                         modifier = Modifier.fillMaxSize()
                     ) {
 
-                        items(uiState.history) { row ->
+                        items(visible) { row ->
                             HistoryRowUi(row, openImage = { images, index ->
                                 viewModel.viewImage(images, index)
                                 navController.navigate(AppScreens.ImageViewer.screenName)
@@ -126,6 +179,8 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
                                 onDelete = {
                                     viewModel.deleteHistory(row.id)
                                 },
+                                mark = uiState.triage[row.id],
+                                onMark = { newMark -> viewModel.setTriage(row.id, newMark) },
                                 onRerun = {
                                     viewModel.rerunFromHistory(row)
                                 },
@@ -143,9 +198,54 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
     }
 }
 
+/** Filter chips for the local keep/discard marks, plus the bulk delete. */
+@Composable
+fun TriageFilterBar(
+    counts: Map<TriageFilter, Int>,
+    selected: TriageFilter,
+    discarded: Int,
+    onSelect: (TriageFilter) -> Unit,
+    onDeleteDiscarded: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TriageFilter.entries.forEach { filter ->
+            FilterChip(
+                selected = filter == selected,
+                onClick = { onSelect(filter) },
+                label = {
+                    Text("${filter.label} (${counts[filter] ?: 0})", fontSize = 11.sp)
+                }
+            )
+        }
+        if (discarded > 0) {
+            TextButton(onClick = onDeleteDiscarded) {
+                Text(
+                    text = "Delete $discarded discarded",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
 @SuppressLint("SuspiciousIndentation")
 @Composable
-fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDelete: () -> Unit, onRerun: () -> Unit, onUseSettings: () -> Unit) {
+fun HistoryRowUi(
+    item: HistoryItem,
+    openImage: (List<String>, Int) -> Unit,
+    onDelete: () -> Unit,
+    onRerun: () -> Unit,
+    onUseSettings: () -> Unit,
+    mark: Triage? = null,
+    onMark: (Triage?) -> Unit = {}
+) {
     val clipboardManager = LocalClipboardManager.current
     var showParams by remember { mutableStateOf(false) }
     val params = remember(item) { item.prompt.runParams() }
@@ -156,6 +256,18 @@ fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDe
         ) {
             Text(text = "Nr: ${item.images.size} success: ${item.success} - completed: ${item.completed}")
             Spacer(modifier = Modifier.weight(1f))
+            // The phone's own marks; nothing is sent to the server.
+            TextButton(onClick = { onMark(if (mark == Triage.Kept) null else Triage.Kept) }) {
+                Text(text = if (mark == Triage.Kept) "★ kept" else "☆ keep", fontSize = 11.sp)
+            }
+            TextButton(onClick = { onMark(if (mark == Triage.Discarded) null else Triage.Discarded) }) {
+                Text(
+                    text = if (mark == Triage.Discarded) "✕ discarded" else "✕ discard",
+                    fontSize = 11.sp,
+                    color = if (mark == Triage.Discarded) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             TextButton(onClick = { showParams = !showParams }) {
                 Text(
                     text = if (showParams) "Hide settings" else "Settings",
@@ -198,7 +310,7 @@ fun HistoryRowUi(item: HistoryItem, openImage: (List<String>, Int) -> Unit, onDe
                                 openImage(item.images, item.images.indexOf(image))
                             }
                             .background(MaterialTheme.colorScheme.secondary),
-                        model = image,
+                        model = thumbnailRequest(LocalContext.current, image, 256),
                         contentDescription = null,
                     )
                 }

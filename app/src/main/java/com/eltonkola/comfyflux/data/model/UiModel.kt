@@ -8,7 +8,10 @@ data class HistoryUiState(
     val history: List<HistoryItem> = emptyList(),
     val loading: Boolean = true,
     val error: Boolean = false,
-    val silentLoading: Boolean = false
+    val silentLoading: Boolean = false,
+    // The phone's own keep/discard marks; they never leave the device.
+    val triage: Map<String, Triage> = emptyMap(),
+    val triageFilter: TriageFilter = TriageFilter.All
 )
 
 data class QueueUiState(
@@ -98,6 +101,9 @@ data class ImageGenerationUiState(
     // Model choices detected on the selected workflow + files picked for them.
     val modelSlots: List<ModelSlot> = emptyList(),
     val modelOverrides: Map<String, String> = emptyMap(),
+    // Strength overrides for the widgets beside model slots, keyed
+    // "nodeId|strength_model"; absent = the workflow's own value.
+    val strengthOverrides: Map<String, Float> = emptyMap(),
     // Boolean inputs the workflow itself exposes (e.g. prompt enhance on/off)
     // and the user's flips; key = "nodeId|inputIndex".
     val workflowToggles: List<WorkflowToggle> = emptyList(),
