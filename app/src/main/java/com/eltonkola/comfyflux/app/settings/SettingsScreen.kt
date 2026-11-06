@@ -171,6 +171,47 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
+            Text(
+                text = "Enrichment endpoint & model",
+                fontSize = 20.sp,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Any OpenAI-compatible chat endpoint works: Groq (default when empty), OpenRouter, OpenAI, llama.cpp, or a local Ollama server like http://192.168.1.5:11434/v1 (model e.g. qwen2.5:7b-instruct, no key needed).",
+                fontSize = 14.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextField(
+                label = {
+                    Text(text = "Endpoint base URL")
+                },
+                supportingText = {
+                    Text(text = "Empty uses https://api.groq.com/openai/v1")
+                },
+                value = uiState.enhanceEndpoint,
+                onValueChange = {
+                    viewModel.setEnhanceEndpoint(it)
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextField(
+                label = {
+                    Text(text = "Model name")
+                },
+                supportingText = {
+                    Text(text = "Empty uses openai/gpt-oss-20b")
+                },
+                value = uiState.enhanceModel,
+                onValueChange = {
+                    viewModel.setEnhanceModel(it)
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
             TextField(
                 label = {
                     Text(text = "GROQ API KEY")

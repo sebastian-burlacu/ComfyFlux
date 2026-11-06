@@ -151,7 +151,7 @@ class MainUseCase(
         }
         if (!groqAPI.hasUsableKey()) {
             _uiState.update {
-                it.copy(promptEnrichError = "Prompt enrichment uses the Groq AI service. Add a free API key from console.groq.com in Settings to enable it.")
+                it.copy(promptEnrichError = "Prompt enrichment needs an API key for this endpoint. Add one in Settings (Groq key at console.groq.com is free) or point the endpoint at a local Ollama server.")
             }
             return
         }

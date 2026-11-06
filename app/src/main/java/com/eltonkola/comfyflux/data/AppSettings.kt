@@ -34,13 +34,20 @@ data class SettingsState(
     val dynamicColor: Boolean,
     val grqApiKey: String,
     val verboseLogging: Boolean,
-    val logBodies: Boolean
+    val logBodies: Boolean,
+    val enhanceEndpoint: String,
+    val enhanceModel: String
 )
 
 class AppSettings(private val sharedPreferences: SharedPreferences) {
 
     private val _settingsState =
-        MutableStateFlow(SettingsState(isDarkTheme(), isSystemTheme(), isDynamicColor(), groqApi(), verboseLogging(), logBodies()))
+        MutableStateFlow(
+            SettingsState(
+                isDarkTheme(), isSystemTheme(), isDynamicColor(), groqApi(),
+                verboseLogging(), logBodies(), enhanceEndpoint(), enhanceModel()
+            )
+        )
     val settingsState: StateFlow<SettingsState> = _settingsState.asStateFlow()
 
     companion object {
@@ -53,6 +60,8 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         const val GENERATION_DRAFT = "generation_draft"
         const val VERBOSE_LOGGING = "verbose_logging"
         const val LOG_BODIES = "log_bodies"
+        const val ENHANCE_ENDPOINT = "enhance_endpoint"
+        const val ENHANCE_MODEL = "enhance_model"
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -99,6 +108,25 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
     fun setLogBodies(value: Boolean) {
         sharedPreferences.edit().putBoolean(LOG_BODIES, value).apply()
         _settingsState.update { it.copy(logBodies = value) }
+    }
+
+    private fun enhanceEndpoint(): String {
+        return sharedPreferences.getString(ENHANCE_ENDPOINT, "").orEmpty()
+    }
+
+    /** OpenAI-compatible base URL for prompt enrichment; empty = built-in Groq. */
+    fun setEnhanceEndpoint(value: String) {
+        sharedPreferences.edit().putString(ENHANCE_ENDPOINT, value.trim()).apply()
+        _settingsState.update { it.copy(enhanceEndpoint = value.trim()) }
+    }
+
+    private fun enhanceModel(): String {
+        return sharedPreferences.getString(ENHANCE_MODEL, "").orEmpty()
+    }
+
+    fun setEnhanceModel(value: String) {
+        sharedPreferences.edit().putString(ENHANCE_MODEL, value.trim()).apply()
+        _settingsState.update { it.copy(enhanceModel = value.trim()) }
     }
 
     fun setServerUrl(url: String) {

@@ -67,12 +67,12 @@ data class XGroq(val id: String)
 
 @Serializable
 data class ApiResponse(
-    val id: String,
-    val `object`: String,
-    val created: Long,
-    val model: String,
+    val id: String = "",
+    val `object`: String = "",
+    val created: Long = 0,
+    val model: String = "",
     val choices: List<Choice>,
-    val usage: Usage,
+    val usage: Usage? = null,
     @SerialName("system_fingerprint")
     val systemFingerprint: String? = null,
     @SerialName("x_groq")
@@ -83,6 +83,10 @@ class GroqAPI(private val appSettings: AppSettings) {
 
     companion object {
         private const val SHARED_API_KEY = BuildConfig.GROQ_API_KEY
+        // OpenAI-compatible chat-completions works for Groq (default),
+        // OpenRouter, OpenAI, llama.cpp/LM Studio and Ollama's /v1 server.
+        const val DEFAULT_ENDPOINT = "https://api.groq.com/openai/v1"
+        const val DEFAULT_MODEL = "openai/gpt-oss-20b"
     }
 
     private val client = HttpClient(CIO) {
@@ -100,17 +104,26 @@ class GroqAPI(private val appSettings: AppSettings) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** False when neither the user nor the build supplies a key; callers must surface that. */
-    fun hasUsableKey(): Boolean =
-        appSettings.settingsState.value.grqApiKey.ifEmpty { SHARED_API_KEY }.isNotEmpty()
+    /**
+     * False when a key is genuinely required: the default (Groq) endpoint
+     * without any key. Custom endpoints may be local and keyless.
+     */
+    fun hasUsableKey(): Boolean {
+        val settings = appSettings.settingsState.value
+        val key = settings.grqApiKey.ifEmpty { SHARED_API_KEY }
+        return key.isNotEmpty() || settings.enhanceEndpoint.isNotBlank()
+    }
 
     suspend fun enrichPrompt(initialPrompt: String): String {
 
-        val apiKey = appSettings.settingsState.value.grqApiKey.ifEmpty { SHARED_API_KEY }
+        val settings = appSettings.settingsState.value
+        val apiKey = settings.grqApiKey.ifEmpty { SHARED_API_KEY }
+        val endpoint = settings.enhanceEndpoint.ifBlank { DEFAULT_ENDPOINT }
+        val model = settings.enhanceModel.ifBlank { DEFAULT_MODEL }
 
         // Never log the API key (it used to be written to logcat).
-        Log.d("GrowAPI", "enrichPrompt, prompt length: ${initialPrompt.length}")
-        val url = "https://api.groq.com/openai/v1/chat/completions"
+        Log.d("GrowAPI", "enrichPrompt via $endpoint model=$model, prompt length: ${initialPrompt.length}")
+        val url = endpoint.trimEnd('/') + "/chat/completions"
 
         val requestBody = RequestBody(
             messages = listOf(
@@ -123,7 +136,7 @@ class GroqAPI(private val appSettings: AppSettings) {
                     "Please enrich this image generation prompt: '$initialPrompt', return the prompt only, without anything else"
                 )
             ),
-            model = "openai/gpt-oss-20b",
+            model = model,
             temperature = 0.7,
             max_tokens = 300,
             top_p = 1,
@@ -132,7 +145,7 @@ class GroqAPI(private val appSettings: AppSettings) {
         val jsonBody = json.encodeToString(requestBody)
 
         val response: HttpResponse = client.post(url) {
-            header(HttpHeaders.Authorization, "Bearer $apiKey")
+            if (apiKey.isNotEmpty()) header(HttpHeaders.Authorization, "Bearer $apiKey")
             contentType(ContentType.Application.Json)
             setBody(jsonBody)
         }

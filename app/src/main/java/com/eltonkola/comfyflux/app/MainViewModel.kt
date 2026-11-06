@@ -266,4 +266,12 @@ class MainViewModel(
         appSettings.setGroqApiKey(key)
     }
 
+    fun setEnhanceEndpoint(endpoint: String) {
+        appSettings.setEnhanceEndpoint(endpoint)
+    }
+
+    fun setEnhanceModel(model: String) {
+        appSettings.setEnhanceModel(model)
+    }
+
 }

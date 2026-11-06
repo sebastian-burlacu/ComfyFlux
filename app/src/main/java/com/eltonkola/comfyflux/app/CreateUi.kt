@@ -459,6 +459,9 @@ fun AdvancedTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
         ModelSlotsSelector(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
         WorkflowSwitchesSelector(uiState = uiState, viewModel = viewModel)
+        // The History/Create bar floats over the tab content; keep the last
+        // switch clear of it.
+        Spacer(modifier = Modifier.height(96.dp))
     }
 }
 
@@ -467,34 +470,43 @@ fun AdvancedTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
 fun WorkflowSwitchesSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
     if (uiState.workflowToggles.isEmpty()) return
 
-    Text(
-        text = "Workflow switches",
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(bottom = 2.dp)
-    )
-    Text(
-        text = "On/off options defined by the workflow itself (prompt enhance, model thinking, ...). They override what is saved in the graph.",
-        fontSize = 13.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
-    uiState.workflowToggles.forEach { toggle ->
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = toggle.label, fontSize = 14.sp)
-                Text(
-                    text = "Saved in the workflow: ${if (toggle.current) "on" else "off"}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = "Workflow switches",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 2.dp)
+        )
+        Text(
+            text = "On/off options defined by the workflow itself (prompt enhance, model thinking, ...). They override what is saved in the graph.",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        uiState.workflowToggles.forEach { toggle ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
+                    Text(text = toggle.label, fontSize = 14.sp)
+                    Text(
+                        text = "Saved in the workflow: ${if (toggle.current) "on" else "off"}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = uiState.toggleOverrides[toggle.key] ?: toggle.current,
+                    onCheckedChange = { checked -> viewModel.setWorkflowToggle(toggle.key, checked) }
                 )
             }
-            Switch(
-                checked = uiState.toggleOverrides[toggle.key] ?: toggle.current,
-                onCheckedChange = { checked -> viewModel.setWorkflowToggle(toggle.key, checked) }
-            )
         }
     }
 }
