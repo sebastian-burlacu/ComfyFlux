@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,11 +28,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,6 +45,7 @@ import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Error
 import com.eltonkola.comfyflux.ui.theme.ikona.Folder
 import com.eltonkola.comfyflux.ui.theme.ikona.OpenFolder
+import com.eltonkola.comfyflux.ui.theme.ikona.Refresh
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,6 +67,38 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
         loadSavedFolder()
     }
 
+    /** Re-read the saved folder; catches files dropped in after the pick. */
+    fun refresh() {
+        val uri = _selectedFolder.value ?: savedFolderUri() ?: return
+        if (!checkPermission(uri)) {
+            _hasPermission.value = false
+            return
+        }
+        rememberFolderName(uri)
+        viewModelScope.launch(Dispatchers.IO) {
+            val documentsTree = DocumentFile.fromTreeUri(getApplication(), uri)
+            _files.value = documentsTree?.listFiles()
+                ?.filter { it.isFile && it.name?.endsWith(".json", ignoreCase = true) == true }
+                ?.map { it.normalize() }
+                ?: emptyList()
+        }
+    }
+
+    /** Human-readable folder name (raw tree URIs are long encoded gibberish). */
+    private val _folderName = MutableStateFlow<String?>(null)
+    val folderName = _folderName.asStateFlow()
+
+    private fun rememberFolderName(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = DocumentFile.fromTreeUri(getApplication(), uri)
+            _folderName.value = doc?.name ?: uri.lastPathSegment?.substringAfterLast(':')
+        }
+    }
+
+    private fun savedFolderUri(): Uri? =
+        getApplication<Application>().getSharedPreferences("FolderPrefs", Application.MODE_PRIVATE)
+            .getString("SELECTED_FOLDER_URI", null)?.let { Uri.parse(it) }
+
     fun loadFiles(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             Log.d("FolderViewModel", "Loading files from URI: $uri")
@@ -78,11 +114,16 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
             if (checkPermission(uri)) {
                 Log.d("FolderViewModel", "Permission granted for URI: $uri")
                 val documentsTree = DocumentFile.fromTreeUri(getApplication(), uri)
-                val fileList = documentsTree?.listFiles()?.toList() ?: emptyList()
-                Log.d("FolderViewModel", "Found ${fileList.size} files")
+                // Only actual JSON workflow files show up; folders and other
+                // files in there would just fail to load anyway.
+                val fileList = documentsTree?.listFiles()
+                    ?.filter { it.isFile && it.name?.endsWith(".json", ignoreCase = true) == true }
+                    ?.toList() ?: emptyList()
+                Log.d("FolderViewModel", "Found ${fileList.size} workflow files")
                 _files.value = fileList.map { it.normalize() }
                 _selectedFolder.value = uri
                 _hasPermission.value = true
+                rememberFolderName(uri)
                 saveSelectedFolderUri(uri)
             } else {
                 Log.d("FolderViewModel", "Permission denied for URI: $uri")
@@ -119,6 +160,7 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+
     private fun checkPermission(uri: Uri): Boolean {
         val list = getApplication<Application>().contentResolver.persistedUriPermissions
         val hasPermission = list.any { it.uri == uri && it.isReadPermission }
@@ -147,7 +189,14 @@ fun LocalWorkflows(
 ) {
     val files by viewModel.files.collectAsState()
     val selectedFolder by viewModel.selectedFolder.collectAsState()
+    val folderName by viewModel.folderName.collectAsState()
     val hasPermission by viewModel.hasPermission.collectAsState()
+
+    // The drawer recomposes every time it opens: rescan so files copied in
+    // from Files/downloads appear without re-picking the folder.
+    LaunchedEffect(Unit) {
+        if (hasPermission) viewModel.refresh()
+    }
 
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -164,6 +213,7 @@ fun LocalWorkflows(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 56.dp)
                     .border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.secondary,
@@ -171,7 +221,7 @@ fun LocalWorkflows(
                     )
                     .clip(RoundedCornerShape(4.dp))
                     .background(MaterialTheme.colorScheme.tertiaryContainer)
-                    .padding(start = 4.dp),
+                    .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
 
@@ -183,9 +233,18 @@ fun LocalWorkflows(
 
                 Text(
                     modifier = Modifier.weight(1f),
-                    text = selectedFolder.toString(),
-                    maxLines = 1,
+                    text = folderName ?: "Selected folder",
+                    fontSize = 13.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
+                )
+
+                HelpIconButton(
+                    onClick = {
+                        viewModel.refresh()
+                    },
+                    imageVector = Ikona.Refresh,
+                    help = "Re-read the folder (picks up files copied in later)"
                 )
 
                 HelpIconButton(
@@ -220,7 +279,7 @@ fun LocalWorkflows(
 
                     Spacer(modifier = Modifier.size(4.dp))
                     Text(
-                        text = "No workouts on the selected folder: $selectedFolder. Manually or with other apps (drive/dropbox, etc) sync your comfyUi api workflows, and select it from below.",
+                        text = "No .json workflow files in this folder yet. Copy ComfyUI workflow JSONs into it (by hand or via Drive/Dropbox) and tap the refresh icon.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.size(4.dp))
