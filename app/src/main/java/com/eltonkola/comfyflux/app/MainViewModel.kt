@@ -135,6 +135,22 @@ class MainViewModel(
         mainUseCase.setSteps(steps)
     }
 
+    fun setSamplerChoice(name: String?) {
+        mainUseCase.setSamplerChoice(name)
+    }
+
+    fun setSchedulerChoice(name: String?) {
+        mainUseCase.setSchedulerChoice(name)
+    }
+
+    fun setDenoise(value: Float?) {
+        mainUseCase.setDenoise(value)
+    }
+
+    fun setAspectChoice(label: String?) {
+        mainUseCase.setAspectChoice(label)
+    }
+
     fun interruptImages() {
         viewModelScope.launch {
             fluxAPI.interrupt()

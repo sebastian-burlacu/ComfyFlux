@@ -24,6 +24,13 @@ import com.eltonkola.comfyflux.data.model.RunParams
 import com.eltonkola.comfyflux.data.model.needs
 import com.eltonkola.comfyflux.data.model.applyModelOverrides
 import com.eltonkola.comfyflux.data.model.hasImageInput
+import com.eltonkola.comfyflux.data.model.detectSamplerSlots
+import com.eltonkola.comfyflux.data.model.detectResolutionSelector
+import com.eltonkola.comfyflux.data.model.nearestAspect
+import com.eltonkola.comfyflux.data.model.applyResolutionSize
+import com.eltonkola.comfyflux.data.model.applySamplerChoices
+import com.eltonkola.comfyflux.data.model.fitToAspect
+import com.eltonkola.comfyflux.data.model.SIZE_STEPS
 import com.eltonkola.comfyflux.data.model.detectModelSlots
 import com.eltonkola.comfyflux.data.model.negativeTextTargets
 import com.eltonkola.comfyflux.data.model.updateNegativePrompt
@@ -148,12 +155,13 @@ class MainUseCase(
     }
 
     fun setImageWidth(width: Int) {
-        _uiState.update { it.copy(width = width) }
+        // Driving the sliders directly supersedes an explicit aspect pick.
+        _uiState.update { it.copy(width = width, aspectChoice = null) }
         saveDraft()
     }
 
     fun setImageHeight(height: Int) {
-        _uiState.update { it.copy(height = height) }
+        _uiState.update { it.copy(height = height, aspectChoice = null) }
         saveDraft()
     }
 
@@ -175,6 +183,37 @@ class MainUseCase(
 
     fun setSteps(steps: Int) {
         _uiState.update { it.copy(steps = steps) }
+        saveDraft()
+    }
+
+    /** null = leave the sampler name the workflow saved. */
+    fun setSamplerChoice(name: String?) {
+        _uiState.update { it.copy(samplerChoice = name) }
+    }
+
+    fun setSchedulerChoice(name: String?) {
+        _uiState.update { it.copy(schedulerChoice = name) }
+    }
+
+    /** null = keep the workflow's denoise; 1.0 is a full (normal) run. */
+    fun setDenoise(value: Float?) {
+        _uiState.update { it.copy(denoise = value?.coerceIn(0.05f, 1f)) }
+    }
+
+    /**
+     * Pick the aspect the workflow's ResolutionSelector should use. The
+     * sliders are refit to the same shape so the size preview stays honest.
+     */
+    fun setAspectChoice(label: String?) {
+        _uiState.update { state ->
+            val slot = state.sizeSlot
+            if (label == null || slot == null) {
+                state.copy(aspectChoice = null)
+            } else {
+                val (w, h) = fitToAspect(state.width, state.height, label, SIZE_STEPS)
+                state.copy(aspectChoice = label, width = w, height = h)
+            }
+        }
         saveDraft()
     }
 
@@ -452,6 +491,8 @@ class MainUseCase(
                 loadRawWorkflow()
             }
             val slots = detectModelSlots(workflow, info)
+            val samplers = detectSamplerSlots(workflow, info)
+            val sizeSlot = detectResolutionSelector(workflow, info)
             val toggles = raw?.let { detectWorkflowToggles(it) } ?: emptyList()
             slotsKey = key
             _uiState.update { state2 ->
@@ -465,6 +506,16 @@ class MainUseCase(
                     workflowToggles = toggles,
                     toggleOverrides = state2.toggleOverrides.filterKeys { k ->
                         toggles.any { it.key == k }
+                    },
+                    // Sampler/size controls of the new workflow; a choice only
+                    // survives while the new workflow still offers it.
+                    samplerSlots = samplers.takeUnless { it.isEmpty },
+                    samplerChoice = state2.samplerChoice?.takeIf { samplers.samplerOptions.contains(it) },
+                    schedulerChoice = state2.schedulerChoice?.takeIf { samplers.schedulerOptions.contains(it) },
+                    denoise = if (samplers.hasDenoise) state2.denoise else null,
+                    sizeSlot = sizeSlot,
+                    aspectChoice = sizeSlot?.let { sz ->
+                        state2.aspectChoice?.takeIf { sz.aspectOptions.contains(it) }
                     },
                     supportsNegativePrompt = workflow.negativeTextTargets().isNotEmpty(),
                     supportsImageInput = workflow.hasImageInput(),
@@ -522,6 +573,11 @@ class MainUseCase(
      * pairing may not match - name it, so a bad run is explainable.
      */
     private fun reportSubstitutions(converter: WorkflowConverter) {
+        val notes = converter.substitutions.map { s ->
+            "${s.classType} node ${s.nodeId}: wanted '${s.wanted}', server has no such file for " +
+                    "${s.input} - used '${s.used}'"
+        }
+        _uiState.update { it.copy(unavailableFiles = notes) }
         converter.substitutions.forEach { s ->
             logStore.info(
                 "client",
@@ -579,6 +635,21 @@ class MainUseCase(
             steps = uiState.value.steps
         )
         workflow.applyModelOverrides(_uiState.value.modelOverrides)
+        // Aspect-driven workflows size through the selector node; width and
+        // height still decide the megapixel count.
+        _uiState.value.sizeSlot?.let { slot ->
+            val aspect = _uiState.value.aspectChoice
+                ?: nearestAspect(slot.aspectOptions, uiState.value.width, uiState.value.height)
+            if (aspect != null) {
+                val megapixels = uiState.value.width * uiState.value.height / 1_000_000f
+                workflow.applyResolutionSize(slot.nodeId, aspect, megapixels)
+            }
+        }
+        workflow.applySamplerChoices(
+            sampler = _uiState.value.samplerChoice,
+            scheduler = _uiState.value.schedulerChoice,
+            denoise = _uiState.value.denoise
+        )
         workflow.updatePrompt(prompt = uiState.value.prompt.cleanPrompt())
         workflow.updateNegativePrompt(prompt = uiState.value.negativePrompt.cleanPrompt())
         workflow.updateSeed(seed = seed)
@@ -590,7 +661,9 @@ class MainUseCase(
                 "prompt-patched-into=${workflow.promptTextTargets()}, " +
                 "negative-patched-into=${workflow.negativeTextTargets()}, " +
                 "switches=${_uiState.value.toggleOverrides}, " +
-                "models=${_uiState.value.modelOverrides}"
+                "models=${_uiState.value.modelOverrides}, " +
+                "sampler=${_uiState.value.samplerChoice} scheduler=${_uiState.value.schedulerChoice} " +
+                "denoise=${_uiState.value.denoise} aspect=${_uiState.value.aspectChoice}"
         )
         return PromptRequest(fluxAPI.clientId, workflow)
     }

@@ -43,6 +43,32 @@ class ModelSlotsTest {
     )
 
     @Test
+    fun server043ComboFormIsOfferedToo() {
+        // ComfyUI 0.43 moved option lists into the metadata object for some
+        // loaders (TripleCLIPLoader, UpscaleModelLoader, ...). Missing that
+        // form silently drops the picker for those nodes.
+        val info = json.parseToJsonElement(
+            """{"TripleCLIPLoader": {"input": {"required": {
+                "clip_name1": ["COMBO", {"options": ["t5xxl_fp8_e4m3fn.safetensors", "clip_l.safetensors"]}],
+                "clip_name2": ["COMBO", {"options": ["clip_g.safetensors"]}],
+                "clip_name3": ["COMBO", {"options": ["clip_h.safetensors"]}]
+            }}}}"""
+        ).jsonObject
+        val wf = json.decodeFromString<Workflow>(
+            """{"11": {"class_type": "TripleCLIPLoader", "inputs": {
+                "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
+                "clip_name2": "clip_g.safetensors",
+                "clip_name3": "clip_h.safetensors", "type": "sd3"}}}"""
+        )
+        val slots = detectModelSlots(wf, info)
+        assertEquals(
+            listOf("clip_name1", "clip_name2", "clip_name3"),
+            slots.map { it.input }
+        )
+        assertEquals(listOf("t5xxl_fp8_e4m3fn.safetensors", "clip_l.safetensors"), slots.first().options)
+    }
+
+    @Test
     fun offersOnlyServerAdvertisedModelFileChoices() {
         val slots = detectModelSlots(workflow(), objectInfo)
 

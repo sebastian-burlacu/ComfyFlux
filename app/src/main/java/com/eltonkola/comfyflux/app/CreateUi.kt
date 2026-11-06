@@ -4,6 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import com.eltonkola.comfyflux.data.model.SIZE_STEPS
+import com.eltonkola.comfyflux.data.model.nearestAspect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +34,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
@@ -254,17 +261,34 @@ fun CreateUi(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (progressUiState.error.isNotEmpty()) {
+                var showFailure by remember { mutableStateOf(false) }
+                val hasDetail = progressUiState.errorDetail.isNotEmpty() ||
+                        uiState.unavailableFiles.isNotEmpty()
                 Column(modifier = Modifier.padding(horizontal = 8.dp)) {
                     Text(
                         text = "Error: ${progressUiState.error}",
                         color = MaterialTheme.colorScheme.error,
                     )
-                    TextButton(
-                        onClick = { viewModel.generateImages() },
-                        enabled = !progressUiState.executing
-                    ) {
-                        Text(text = "Retry with same settings")
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (hasDetail) {
+                            TextButton(onClick = { showFailure = true }) {
+                                Text(text = "Show details")
+                            }
+                        }
+                        TextButton(
+                            onClick = { viewModel.generateImages() },
+                            enabled = !progressUiState.executing
+                        ) {
+                            Text(text = "Retry with same settings")
+                        }
                     }
+                }
+                if (showFailure) {
+                    FailureDetailDialog(
+                        detail = progressUiState.errorDetail.ifBlank { progressUiState.error },
+                        unavailableFiles = uiState.unavailableFiles,
+                        onDismiss = { showFailure = false }
+                    )
                 }
             }
 
@@ -483,6 +507,8 @@ fun SizeTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
     ) {
         ImageSizeSelector(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
+        AspectRatioSelector(uiState = uiState, viewModel = viewModel)
+        Spacer(modifier = Modifier.height(8.dp))
         ImageBatchSelector(uiState = uiState, viewModel = viewModel)
     }
 }
@@ -618,7 +644,7 @@ fun ModelSlotsSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel
 
 @Composable
 fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
-    val imageSizes = listOf(256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024)
+    val imageSizes = SIZE_STEPS
     val sliderValues = List(imageSizes.size) { index -> index.toFloat() }
 
     // Sizes can come from anywhere (a picked photo's aspect ratio yields
@@ -807,6 +833,7 @@ fun SeedSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
     // Local text so a half-typed "7." isn't rewritten to "7.0" under the cursor;
     // empty input means "0", i.e. keep the workflow's own value.
@@ -862,7 +889,185 @@ fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainView
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
         }
+
+        // Sampler / scheduler / denoise, straight from the server's own
+        // option lists for the samplers this workflow uses.
+        uiState.samplerSlots?.takeUnless { it.isEmpty }?.let { slots ->
+            Spacer(modifier = Modifier.height(8.dp))
+            listOf(
+                "Sampler" to (slots.samplerOptions to (uiState.samplerChoice ?: slots.currentSampler)),
+                "Scheduler" to (slots.schedulerOptions to (uiState.schedulerChoice ?: slots.currentScheduler))
+            ).forEach { (label, pair) ->
+                val (options, selected) = pair
+                if (options.isEmpty()) return@forEach
+                var expanded by remember(label) { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = selected,
+                        onValueChange = {},
+                        readOnly = true,
+                        singleLine = true,
+                        label = {
+                            Text(
+                                text = if (label == "Sampler") "Sampler" else "Scheduler",
+                                fontSize = 13.sp
+                            )
+                        },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                    ) {
+                        options.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option, fontSize = 13.sp) },
+                                onClick = {
+                                    expanded = false
+                                    if (label == "Sampler") {
+                                        viewModel.setSamplerChoice(option)
+                                    } else {
+                                        viewModel.setSchedulerChoice(option)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            if (slots.hasDenoise) {
+                val denoise = uiState.denoise
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Slider(
+                        value = denoise ?: slots.currentDenoise.coerceIn(0.05f, 1f),
+                        onValueChange = { viewModel.setDenoise(it) },
+                        valueRange = 0.05f..1f,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = if (denoise == null) "keep (${slots.currentDenoise})"
+                        else "%.2f".format(denoise),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 6.dp)
+                    )
+                }
+                if (denoise != null) {
+                    TextButton(onClick = { viewModel.setDenoise(null) }) {
+                        Text("Use the workflow's denoise", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
     }
+}
+
+
+/** Aspect chips for workflows that size through a ResolutionSelector node. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun AspectRatioSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
+    val slot = uiState.sizeSlot ?: return
+    if (slot.aspectOptions.isEmpty()) return
+    val chosen = uiState.aspectChoice
+        ?: nearestAspect(slot.aspectOptions, uiState.width, uiState.height)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        Text(text = "Aspect ratio", style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = "This workflow sizes itself: the sliders set the pixel count, " +
+                    "the aspect decides the shape.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            slot.aspectOptions.forEach { option ->
+                FilterChip(
+                    selected = option == chosen,
+                    onClick = { viewModel.setAspectChoice(option) },
+                    label = { Text(option, fontSize = 11.sp) }
+                )
+            }
+        }
+        if (uiState.aspectChoice != null) {
+            TextButton(onClick = { viewModel.setAspectChoice(null) }) {
+                Text("Match the aspect to the sliders", fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+
+/** Full server failure + the files the template asked for that are missing. */
+@Composable
+fun FailureDetailDialog(
+    detail: String,
+    unavailableFiles: List<String>,
+    onDismiss: () -> Unit
+) {
+    val clipboard = LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Generation failed") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .fillMaxWidth()
+            ) {
+                Text(
+                    text = detail,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                if (unavailableFiles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Files the template asked for that this server does not have:",
+                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    unavailableFiles.forEach {
+                        Text(text = it, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    clipboard.setText(
+                        AnnotatedString(
+                            buildString {
+                                append(detail)
+                                if (unavailableFiles.isNotEmpty()) {
+                                    appendLine()
+                                    appendLine()
+                                    appendLine("Missing files:")
+                                    unavailableFiles.forEach { appendLine(it) }
+                                }
+                            }
+                        )
+                    )
+                }
+            ) { Text(text = "Copy") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = "Close") }
+        }
+    )
 }
 
 

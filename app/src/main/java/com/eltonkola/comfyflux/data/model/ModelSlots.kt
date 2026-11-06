@@ -111,14 +111,7 @@ private fun slotOrder(classType: String) = SLOT_ORDER.indexOf(classType).let { i
  * [["a.safetensors", "b.safetensors"], {metadata}]. Anything else (type
  * names, free text, link specs) yields null: not a choice we can offer.
  */
-private fun JsonElement.comboOptions(): List<String>? {
-    val array = this as? JsonArray ?: return null
-    if (array.isEmpty()) return null
-    val first = array.first()
-    val candidates: List<JsonElement> = if (first is JsonArray) array.first() as JsonArray else array
-    val strings = candidates.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
-    return strings.takeIf { it.isNotEmpty() && strings.size == candidates.size }
-}
+private fun JsonElement.comboOptions(): List<String>? = comboStringOptions()
 
 /**
  * Point the chosen loader inputs at the picked files. Keys are ModelSlot.key

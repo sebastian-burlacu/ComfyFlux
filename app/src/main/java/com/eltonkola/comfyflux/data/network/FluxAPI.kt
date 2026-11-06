@@ -576,7 +576,8 @@ class FluxAPI(private val logStore: LogStore) {
                     statusMessage = "Execution started",
                     // Fresh job: don't leave an earlier failure hanging on
                     // the screen while the queue keeps running.
-                    error = ""
+                    error = "",
+                    errorDetail = ""
                 )
             }
             is WSMessage.ExecutionCachedMessage -> _progressUiState.value =
@@ -618,6 +619,7 @@ class FluxAPI(private val logStore: LogStore) {
                         executing = moreJobs,
                         statusMessage = if (moreJobs) "Execution failed (queued jobs continue)" else "Execution failed",
                         error = error,
+                        errorDetail = failureDetail(message),
                     )
                 }
             }
@@ -876,3 +878,32 @@ internal fun parsePreviewImageBytes(bytes: ByteArray): ByteArray? {
     }
     return if (offset < bytes.size) bytes.copyOfRange(offset, bytes.size) else null
 }
+
+/**
+ * The whole server failure in readable form: which node died, its type, the
+ * exception, and what had already run. Shown behind "Show details" on the
+ * Create screen so the short toast/line stays readable.
+ */
+internal fun failureDetail(message: WSMessage.ExecutionErrorMessage): String = buildString {
+    appendLine("${message.exceptionType ?: "ExecutionError"}: ${message.exceptionMessage ?: "unknown error"}")
+    message.nodeId?.let { id ->
+        appendLine("Failed node: $id${message.nodeType?.let { " ($it)" } ?: ""}")
+    }
+    if (message.executed.isNotEmpty()) {
+        appendLine("Completed first: ${message.executed.joinToString(", ")}")
+    }
+    val detail = message.exceptionMessage.orEmpty()
+    when {
+        "expected input with shape" in detail || "normalized_shape" in detail || "size mismatch" in detail ->
+            appendLine(
+                "Shape mismatch: the model and the conditioning/latent do not fit. " +
+                        "Check the log for model files this server does not have."
+            )
+        "not in list" in detail || "Value not in list" in detail ->
+            appendLine("A widget value is not offered by this server - pick another file or option.")
+        "CUDA out of memory" in detail ->
+            appendLine("The GPU ran out. Lower the resolution or batch size, or close other GPU users.")
+        "missing required input" in detail.lowercase() ->
+            appendLine("A node is missing a connection - part of this workflow may not be installed.")
+    }
+}.trim()

@@ -43,6 +43,9 @@ data class ProgressGenerationUIState(
     val generatedImages: List<String> = emptyList(),
     val statusMessage: String = "",
     val error: String = "",
+    // Full server failure (node id/type, message, what ran first); empty
+    // when the failure is app-side.
+    val errorDetail: String = "",
     val executing: Boolean = false,
     val allNodes: List<String> = emptyList(),
     val remainingNodes: List<String> = emptyList(),
@@ -82,6 +85,16 @@ data class ImageGenerationUiState(
     // 0 keeps whatever the workflow itself specifies.
     val cfg: Float = 0f,
     val steps: Int = 0,
+    // Sampler knobs the selected workflow exposes; null choice = keep the
+    // workflow's own value.
+    val samplerSlots: SamplerSlots? = null,
+    val samplerChoice: String? = null,
+    val schedulerChoice: String? = null,
+    val denoise: Float? = null,
+    // Set when the workflow sizes itself through a ResolutionSelector node
+    // (aspect ratio + megapixels) instead of latent width/height.
+    val sizeSlot: SizeSlot? = null,
+    val aspectChoice: String? = null,
     // Model choices detected on the selected workflow + files picked for them.
     val modelSlots: List<ModelSlot> = emptyList(),
     val modelOverrides: Map<String, String> = emptyMap(),
@@ -99,6 +112,9 @@ data class ImageGenerationUiState(
     val workflowNeeds: WorkflowNeeds? = null,
     val imageInputs: List<ImageInput> = emptyList(),
     val imagePicks: Map<String, ImagePick> = emptyMap(),
+    // Template settings this server could not provide (model files mostly);
+    // shown with any failure so a broken pairing is explainable.
+    val unavailableFiles: List<String> = emptyList(),
     val recentPrompts: List<String> = emptyList()
 )
 
