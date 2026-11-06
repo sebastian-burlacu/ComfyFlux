@@ -73,6 +73,23 @@ internal fun fittedSize(imgW: Int, imgH: Int, cap: Int = 1024): Pair<Int, Int> {
     }
 }
 
+/**
+ * Index of the closest entry in a sorted size list. Sizes can be arbitrary
+ * (photo aspect fitting), so an exact index lookup can miss - never here.
+ */
+internal fun nearestSizeIndex(sizes: List<Int>, value: Int): Int {
+    var best = 0
+    var bestDiff = Int.MAX_VALUE
+    sizes.forEachIndexed { index, size ->
+        val diff = kotlin.math.abs(size - value)
+        if (diff < bestDiff) {
+            bestDiff = diff
+            best = index
+        }
+    }
+    return best
+}
+
 class MainUseCase(
     private val fluxAPI: FluxAPI,
     private val groqAPI: GroqAPI,

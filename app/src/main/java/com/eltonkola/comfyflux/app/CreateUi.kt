@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.eltonkola.comfyflux.R
+import com.eltonkola.comfyflux.app.usecase.nearestSizeIndex
 import com.eltonkola.comfyflux.components.HelpIconButton
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.ProgressGenerationUIState
@@ -620,8 +621,12 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
     val imageSizes = listOf(256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024)
     val sliderValues = List(imageSizes.size) { index -> index.toFloat() }
 
-    var widthIndex by remember { mutableIntStateOf(imageSizes.indexOf(uiState.width)) }
-    var heightIndex by remember { mutableIntStateOf(imageSizes.indexOf(uiState.height)) }
+    // Sizes can come from anywhere (a picked photo's aspect ratio yields
+    // multiples of 32 like 928), so the slider parks on the NEAREST step
+    // instead of looking the value up in this fixed list - an exact
+    // lookup returned -1 and crashed the tab.
+    val widthIndex = nearestSizeIndex(imageSizes, uiState.width)
+    val heightIndex = nearestSizeIndex(imageSizes, uiState.height)
 
     Row(
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
@@ -633,26 +638,24 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 .weight(1f)
                 .padding(end = 6.dp)
         ) {
-            Text(text = "Width: ${imageSizes[widthIndex]}Px", fontSize = 13.sp)
+            Text(text = "Width: ${uiState.width}Px", fontSize = 13.sp)
             Slider(
                 value = widthIndex.toFloat(),
                 valueRange = sliderValues.first()..sliderValues.last(),
                 onValueChange = {
-                    widthIndex = it.toInt()
-                    viewModel.setImageWidth(imageSizes[widthIndex])
+                    viewModel.setImageWidth(imageSizes[it.toInt()])
                 },
-                steps = sliderValues.size
+                steps = sliderValues.size - 2
             )
 
-            Text(text = "Height: ${imageSizes[heightIndex]}Px", fontSize = 13.sp)
+            Text(text = "Height: ${uiState.height}Px", fontSize = 13.sp)
             Slider(
                 value = heightIndex.toFloat(),
                 valueRange = sliderValues.first()..sliderValues.last(),
                 onValueChange = {
-                    heightIndex = it.toInt()
-                    viewModel.setImageHeight(imageSizes[heightIndex])
+                    viewModel.setImageHeight(imageSizes[it.toInt()])
                 },
-                steps = sliderValues.size
+                steps = sliderValues.size - 2
             )
         }
         // Preview scales its AREA with total pixels (1024x1024 fills the
@@ -660,8 +663,8 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
         // aspect ratio and how big the output actually is.
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(modifier = Modifier.size(96.dp), contentAlignment = Alignment.Center) {
-                val w = imageSizes[widthIndex]
-                val h = imageSizes[heightIndex]
+                val w = uiState.width
+                val h = uiState.height
                 val maxArea = 1024f * 1024f
                 val scale = kotlin.math.sqrt((w * h) / maxArea)
                 val previewH = (96f * scale).coerceAtLeast(28f)
@@ -675,7 +678,7 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 ) {}
             }
             Text(
-                text = "${imageSizes[widthIndex]}x${imageSizes[heightIndex]}",
+                text = "${uiState.width}x${uiState.height}",
                 fontSize = 12.sp
             )
         }
