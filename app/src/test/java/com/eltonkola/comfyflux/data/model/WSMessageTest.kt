@@ -29,6 +29,24 @@ class WSMessageTest {
     }
 
     @Test
+    fun executedMessageWithoutImagesDecodes() {
+        // 'executed' also fires for intermediate nodes (TextGenerate,
+        // PreviewAny, ...); demanding 'images' crashed generation.
+        val textOutput = """
+        {"type": "executed", "data": {"node": "471", "prompt_id": "7fe2", "output": {"text": ["rewritten prompt"]}}}
+        """
+        val message = WSMessage.fromJson(textOutput) as WSMessage.ExecutedMessage
+        assertEquals("471", message.node)
+        assertEquals(emptyList<String>(), message.output.images.map { it.filename })
+
+        val noOutput = """
+        {"type": "executed", "data": {"node": "472", "prompt_id": "7fe2"}}
+        """
+        val second = WSMessage.fromJson(noOutput) as WSMessage.ExecutedMessage
+        assertEquals(emptyList<String>(), second.output.images.map { it.filename })
+    }
+
+    @Test
     fun testStatusMessageParsing() {
         val status = """
         {"type": "status", "data": {"status": {"exec_info": {"queue_remaining": 1}}, "sid": "74fce948-fd4d-4104-93eb-388c54fd01e0"}}

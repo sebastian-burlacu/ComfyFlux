@@ -354,7 +354,12 @@ class FluxAPI(private val logStore: LogStore) {
             )
         }
 
-
+        // Intermediate nodes finish with no images: keep the gallery intact.
+        if (images.isEmpty()) {
+            return _progressUiState.value.copy(
+                statusMessage = "Completed node ${message.node}",
+            )
+        }
 
         return _progressUiState.value.copy(
             generatedImages = images,

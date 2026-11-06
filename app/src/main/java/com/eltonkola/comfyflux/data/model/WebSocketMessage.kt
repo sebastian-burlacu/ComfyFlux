@@ -64,7 +64,7 @@ sealed class WSMessage {
         @SerialName("prompt_id")
         override val promptId: String,
         val node: String,
-        val output: Output
+        val output: Output = Output()
     ) : WSMessage()
 
     @Serializable
@@ -117,7 +117,9 @@ sealed class WSMessage {
 
     @Serializable
     data class Output(
-        val images: List<Image>
+        // 'executed' fires for EVERY finished node; intermediate nodes
+        // (TextGenerate, PreviewAny, ...) report other keys or none at all.
+        val images: List<Image> = emptyList()
     )
 
     @Serializable
