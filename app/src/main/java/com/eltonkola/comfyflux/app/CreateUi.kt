@@ -312,11 +312,15 @@ fun PromptTab(
 
                     val clipboard = LocalClipboardManager.current
 
+                    // 4 x 48dp would overflow the 150dp field (the clear
+                    // icon used to be cut off): compact buttons fit all four.
                     HelpIconButton(
                         onClick = {
                             viewModel.enrichPrompt()
                         },
                         imageVector = Ikona.Magic,
+                        size = 34.dp,
+                        iconSize = 18.dp,
                         help = "Rewrite the prompt into a richer one using AI (needs a Groq API key in Settings)"
                     )
                     HelpIconButton(
@@ -326,6 +330,8 @@ fun PromptTab(
                             }
                         },
                         imageVector = Ikona.Paste,
+                        size = 34.dp,
+                        iconSize = 18.dp,
                         help = "Append the clipboard contents to the prompt"
                     )
                     HelpIconButton(
@@ -333,6 +339,8 @@ fun PromptTab(
                             viewModel.randomPrompt()
                         },
                         imageVector = Ikona.Random,
+                        size = 34.dp,
+                        iconSize = 18.dp,
                         help = "Fill the prompt with a random entry from the offline prompt library"
                     )
                     HelpIconButton(
@@ -340,6 +348,8 @@ fun PromptTab(
                             viewModel.updatePrompt("")
                         },
                         imageVector = Ikona.Clean,
+                        size = 34.dp,
+                        iconSize = 18.dp,
                         help = "Clear the prompt box"
                     )
                 }

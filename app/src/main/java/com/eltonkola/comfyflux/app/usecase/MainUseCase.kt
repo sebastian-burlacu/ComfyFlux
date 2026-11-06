@@ -185,8 +185,23 @@ class MainUseCase(
                         }
                     )
                 }
+                // After a restart the draft can name a SERVER workflow, which
+                // only exists once the listing is in. Re-select it exactly
+                // once so the app "remembers" the workflow you work on.
+                if (!restoredServerWorkflow) {
+                    restoredServerWorkflow = true
+                    val desired = pickRestoredServerWorkflow(appSettings.generationDraft(), names)
+                    if (desired != null && _uiState.value.workflow.workflowUri != "server://$desired") {
+                        updateWorkflow(
+                            WorkflowFile(desired, "Saved from the ComfyUI web UI", "server://$desired", isAsset = false, isServer = true)
+                        )
+                        logStore.debug("client", "restored last-used workflow '$desired'")
+                    }
+                }
             }
     }
+
+    private var restoredServerWorkflow = false
 
     // Recomputed only when the server+workflow pair changes or slots were cleared.
     private var slotsKey: String? = null
@@ -460,3 +475,10 @@ fun pushRecent(existing: List<String>, prompt: String): List<String> {
     if (trimmed.isEmpty()) return existing
     return (listOf(trimmed) + existing.filter { it.trim() != trimmed }).take(10)
 }
+/**
+ * Workflow to re-select after a restart once the server listing arrived:
+ * the draft's server workflow, but only if it still exists server-side.
+ * Asset-drafts are restored earlier (before any listing) and return null.
+ */
+internal fun pickRestoredServerWorkflow(draft: GenerationDraft?, names: List<String>): String? =
+    draft?.takeIf { it.workflowIsServer }?.workflowName?.takeIf { it in names }
