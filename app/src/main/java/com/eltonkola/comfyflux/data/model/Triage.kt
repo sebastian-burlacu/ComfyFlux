@@ -85,21 +85,6 @@ class TriageStore(context: Context) {
         ).apply()
     }
 
-    /** Drop marks for runs that are no longer on the server. */
-    fun prune(liveIds: Set<String>) {
-        val current = all()
-        val dead = current.keys - liveIds
-        if (dead.isEmpty()) return
-        prefs.edit().putString(
-            KEY,
-            buildJsonObject {
-                current.filterKeys { it in liveIds }.forEach { (key, value) ->
-                    put(key, JsonPrimitive(if (value == Triage.Kept) "kept" else "discarded"))
-                }
-            }.toString()
-        ).apply()
-    }
-
     companion object {
         private const val KEY = "triage"
     }
