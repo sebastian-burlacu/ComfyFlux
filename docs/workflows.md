@@ -43,9 +43,11 @@ don't rewrite your saved file.
 - The app must find a sampler to patch CFG/steps into and a text encoder for
   the prompt. A workflow without them still runs — you just can't drive those
   values from the phone.
-- Workflows that need a runtime *image input* (img2img, inpaint, ControlNet
-  from a photo) can't be fed from the phone yet — there's no upload path.
-  Those nodes will keep whatever file the workflow already references.
+- Runtime *image input* (img2img, inpaint, ControlNet from a photo) works
+  for the standard `LoadImage` node: pick a photo on the Prompt tab, the app
+  uploads it to the server on Create and points the node at it. Image nodes
+  from custom packs that don't use `LoadImage` still run with the file the
+  workflow already references.
 
 ## What the app deliberately doesn't do
 

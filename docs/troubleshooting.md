@@ -67,7 +67,8 @@ issue template history shows what's already fixed.
 
 - Generation always runs the *server's* copy of a server workflow; there's no
   local editing.
-- No image upload / img2img input from the phone yet.
+- img2img is fed through the standard `LoadImage` node only; exotic custom
+  image loaders keep the file baked into the workflow.
 - Connections are plain HTTP; keep the server on a trusted LAN (no TLS, no
   auth in either side).
 - Notifications only fire for generations started in this app instance.

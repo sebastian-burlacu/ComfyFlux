@@ -47,12 +47,18 @@ Two sources, picked from the drawer on the Create screen:
 3. **Advanced** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
    step count. CFG/steps set to `0` keep whatever the workflow itself defines;
    any non-zero value overrides every sampler in the graph.
-4. **Models** (Advanced tab): when the workflow loads model files the server
+4. **Input image** (Prompt tab): workflows that load an image (a
+   `LoadImage` node) show a **Choose input image** button. Pick a photo; on
+   Create it's uploaded to the server and wired into the node automatically
+   - that's img2img from your phone. Leave it unset and the workflow keeps
+   the file it references. The pick is for this app session (restarts clear
+   it; re-picking the same photo doesn't re-upload it).
+5. **Models** (Advanced tab): when the workflow loads model files the server
    can list (checkpoints, UNETs, LoRAs, VAEs, CLIPs, ControlNets), a dropdown
    appears for each — the same "pick your safetensors" step as in the web UI,
    without the graph. Options come live from the server; selections reset
    when you switch workflows.
-5. Hit **Create**. Progress, current node and queue position show live;
+6. Hit **Create**. Progress, current node and queue position show live;
    finished images land in the preview grid, the History tab and the ComfyUI
    output folder.
 
@@ -65,6 +71,16 @@ queued job without touching the running one.
 
 Rerunning a past generation: History tab → the refresh icon on a row re-queues
 it with its exact original settings.
+
+## Comfy-Org template library
+
+The Workflows drawer has **Browse Comfy-Org templates**: ~760 ready-made
+workflows with preview thumbnails, straight from Comfy's official template
+repo (no account, no app store). Tap one, **Import to server** stores it on
+your ComfyUI like anything you save in the web UI, and it appears under
+Server Workflows. After the import the app tells you if the template uses
+custom nodes your server doesn't have - install those (ComfyUI Manager)
+before expecting it to run.
 
 ## Prompts
 
