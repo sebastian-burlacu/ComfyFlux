@@ -355,7 +355,12 @@ class FluxAPI(private val logStore: LogStore) {
 
     private fun handleExecutedMessage(message: WSMessage.ExecutedMessage): ProgressGenerationUIState {
 
-        val images = message.output.images.map {
+        // Only saved outputs. Preview-style nodes (PreviewImage /
+        // PreviewAny / ImageCompare's compare view) emit temp images in the
+        // same event: showing them put the workflow's INPUT reference (and
+        // the compare thumbnails) in the result gallery, which reads as
+        // "it did nothing". History normalisation filters the same way.
+        val images = message.output.images.filter { it.type == "output" }.map {
             getImage(
                 filename = it.filename,
                 subfolder = it.subfolder,
