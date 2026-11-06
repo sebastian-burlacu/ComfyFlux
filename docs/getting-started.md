@@ -65,8 +65,11 @@ Two sources, picked from the drawer on the Create screen:
    without the graph. Options come live from the server; selections reset
    when you switch workflows.
 6. Hit **Create**. Progress, current node and queue position show live;
-   finished images land in the preview grid, the History tab and the ComfyUI
-   output folder.
+   while sampling runs the preview grid shows the **live latent preview**
+   streamed from the server (ComfyUI 0.43+). An ongoing notification tracks
+   the run, so the generation keeps going (and stays visible) when you leave
+   the app. Finished images land in the preview grid, the History tab and the
+   ComfyUI output folder.
 
 Create can be tapped again while a generation runs: the app queues another
 job behind it (the server works the queue first-come, first-served) and all
@@ -76,7 +79,11 @@ When jobs are pending, **Clear queue** appears above History and drops every
 queued job without touching the running one.
 
 Rerunning a past generation: History tab → the refresh icon on a row re-queues
-it with its exact original settings.
+it with its exact original settings. The **Settings** button on a row shows
+how that run was actually configured (seed, steps, CFG, sampler, scheduler,
+denoise, model files) and **Use these settings on Create** prefills the
+Advanced sliders with them — handy for re-rolling a good look with a new
+prompt.
 
 ## Comfy-Org template library
 

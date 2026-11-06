@@ -38,7 +38,15 @@ don't rewrite your saved file.
 ## Requirements for a server workflow to run
 
 - Every custom node in it must be installed **on the server** — the app ships
-  no nodes, it only sequences what the server already has.
+  no nodes, it only sequences what the server already has. If a node's class
+  is missing anyway, connections to it are pruned and its required settings
+  fall back to server defaults instead of the whole import failing: the run
+  will still fail at that node, but the rest of the graph keeps working.
+- **Muted and bypassed nodes are honored.** A muted node is dropped from the
+  run; a bypassed node is routed around - its same-named input flows straight
+  through to whatever was connected to its output, chains included. ComfyUI's
+  web UI does this at export time and the server does no mode handling, so
+  the converter emulates it.
 - Subgraph nodes (ComfyUI's built-in subgraphs) are supported; the converter
   flattens them using the server's own `object_info`.
 - The app must find a sampler to patch CFG/steps into and a text encoder for
