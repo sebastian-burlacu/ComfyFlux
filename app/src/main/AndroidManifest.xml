@@ -7,6 +7,8 @@
 
     <!-- completion/failure notifications when the app runs in the background -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- workflows are picked through the Storage Access Framework, which needs
          no storage permission -->
@@ -33,6 +35,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- live progress + keeps generation alive while backgrounded -->
+        <service
+            android:name=".data.GenerationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- log export: cache/logs shared via ACTION_SEND chooser -->
         <provider
