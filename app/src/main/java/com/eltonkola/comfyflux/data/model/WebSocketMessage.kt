@@ -47,16 +47,17 @@ sealed class WSMessage {
     data class ExecutingMessage(
         @SerialName("prompt_id")
         override val promptId: String? = null,
-        val node: String
+        // null once the prompt has run out of nodes - the completion marker.
+        val node: String = ""
     ) : WSMessage()
 
     @Serializable
     data class ProgressMessage(
         @SerialName("prompt_id")
         override val promptId: String,
-        val value: Int,
-        val max: Int,
-        val node: String
+        val value: Double,
+        val max: Double,
+        val node: String = ""
     ) : WSMessage()
 
     /**
@@ -70,21 +71,39 @@ sealed class WSMessage {
         val nodes: Map<String, NodeProgress> = emptyMap()
     ) : WSMessage() {
         @Serializable
-        data class NodeProgress(val value: Int, val max: Int, val state: String)
+        // 0.43 sends fractional values and lowercase states
+        // ("pending" / "running" / "finished").
+        data class NodeProgress(
+            val value: Double = 0.0,
+            val max: Double = 0.0,
+            val state: String = ""
+        )
 
-        /** The node furthest along - what the progress bar should follow. */
-        fun active(): NodeProgress? =
-            nodes.values.filter { it.state != "Pending" && it.max > 0 }
-                .maxByOrNull { it.value.toFloat() / it.max }
+        /**
+         * The node the progress bar should follow: a running one, preferring
+         * the furthest along. Finished nodes (value == max) are skipped so a
+         * quick node can't peg the bar at 100% while the sampler starts.
+         */
+        fun active(): NodeProgress? {
+            val candidates = nodes.values.filter { it.max > 0 }
+            return candidates.filter { it.state == "running" }
+                .maxByOrNull { it.value / it.max }
+                ?: candidates.filter { it.state != "finished" }.maxByOrNull { it.value / it.max }
+        }
     }
 
     @Serializable
     data class ExecutedMessage(
         @SerialName("prompt_id")
         override val promptId: String,
-        val node: String,
+        val node: String = "",
         val output: Output = Output()
     ) : WSMessage()
+
+    /** Server's reply to our feature_flags handshake (server-side feature map). */
+    data object FeatureFlagsMessage : WSMessage() {
+        override val promptId: String? = null
+    }
 
     @Serializable
     data class ExecutionSuccessMessage(
@@ -149,7 +168,12 @@ sealed class WSMessage {
     )
 
     companion object {
-        private val json = Json { ignoreUnknownKeys = true }
+        private val json = Json {
+            ignoreUnknownKeys = true
+            // Real servers send "node": null on the executing/executed
+            // completion markers; coerce to the defaults instead of throwing.
+            coerceInputValues = true
+        }
 
         fun fromJson(jsonString: String): WSMessage {
             val baseMessage = json.decodeFromString<BaseMessage>(jsonString)
@@ -165,6 +189,7 @@ sealed class WSMessage {
                 "progress" -> json.decodeFromString<ProgressMessage>(data)
                 "progress_state" -> json.decodeFromString<ProgressStateMessage>(data)
                 "executed" -> json.decodeFromString<ExecutedMessage>(data)
+                "feature_flags" -> FeatureFlagsMessage
                 "execution_success" -> json.decodeFromString<ExecutionSuccessMessage>(data)
                 "execution_error" -> json.decodeFromString<ExecutionErrorMessage>(data)
                 "execution_interrupted" -> json.decodeFromString<ExecutionInterruptedMessage>(data)

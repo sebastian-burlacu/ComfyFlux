@@ -340,8 +340,8 @@ class FluxAPI(private val logStore: LogStore) {
 
     private fun handleProgressMessage(message: WSMessage.ProgressMessage): ProgressGenerationUIState {
         return _progressUiState.value.copy(
-            progress = message.value,
-            maxProgress = message.max,
+            progress = message.value.toInt(),
+            maxProgress = message.max.toInt(),
         )
     }
 
@@ -407,6 +407,11 @@ class FluxAPI(private val logStore: LogStore) {
     }
 
     private fun handleExecutingMessage(message: WSMessage.ExecutingMessage): ProgressGenerationUIState {
+
+        if (message.node.isBlank()) {
+            // "executing" with a null node is the completion marker.
+            return _progressUiState.value.copy(statusMessage = "Nodes finished")
+        }
 
         val notes = _progressUiState.value.remainingNodes.toMutableList().apply {
             remove(message.node)
@@ -507,7 +512,14 @@ class FluxAPI(private val logStore: LogStore) {
                     if (frame !is Frame.Text) continue
                     val messageText = frame.readText()
 
-                    val wsMessage = WSMessage.fromJson(messageText)
+                    // One malformed or unfamiliar event must never end the
+                    // session - the generation on the server is unaffected.
+                    val wsMessage = try {
+                        WSMessage.fromJson(messageText)
+                    } catch (e: Exception) {
+                        logStore.error("client", "ignoring unreadable ws event: ${e.message?.take(200)}")
+                        continue
+                    }
                     logStore.debug(
                         "client",
                         "ws event: ${wsMessage.javaClass.simpleName}" +
@@ -574,7 +586,12 @@ class FluxAPI(private val logStore: LogStore) {
             is WSMessage.ProgressStateMessage -> {
                 val active = message.active()
                 if (active != null) {
-                    _progressUiState.update { it.copy(progress = active.value, maxProgress = active.max) }
+                    _progressUiState.update {
+                        it.copy(
+                            progress = active.value.toInt(),
+                            maxProgress = active.max.toInt()
+                        )
+                    }
                 }
             }
             is WSMessage.ExecutedMessage -> _progressUiState.value = handleExecutedMessage(message)
@@ -613,6 +630,9 @@ class FluxAPI(private val logStore: LogStore) {
                         statusMessage = if (moreJobs) "Execution interrupted (queued jobs continue)" else "Execution interrupted"
                     )
                 }
+            }
+            is WSMessage.FeatureFlagsMessage -> {
+                logStore.debug("server", "feature flags handshake acknowledged")
             }
             is WSMessage.Unknown -> {
                 logStore.info("server", "unhandled server event: ${message.type}")

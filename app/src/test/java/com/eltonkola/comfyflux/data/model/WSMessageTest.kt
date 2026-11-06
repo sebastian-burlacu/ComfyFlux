@@ -109,9 +109,51 @@ class WSMessageTest {
 
         val message = WSMessage.fromJson(progress) as WSMessage.ProgressMessage
         assertEquals("f79020a5-b9ca-465d-9fb0-59c9ffef379c", message.promptId)
-        assertEquals(4, message.value)
-        assertEquals(4, message.max)
+        assertEquals(4.0, message.value, 0.0001)
+        assertEquals(4.0, message.max, 0.0001)
         assertEquals("13", message.node)
+    }
+
+    // Server payloads seen in the wild (0.43): null node markers and
+    // fractional progress_state values must not break the session.
+    @Test
+    fun executingCompletionMarkerHasNullNode() {
+        val m = WSMessage.fromJson(
+            """{"type": "executing", "data": {"node": null, "prompt_id": "ef39f6e2-c6bf-48ee-9f58-e3991ac76799"}}"""
+        ) as WSMessage.ExecutingMessage
+        assertEquals("ef39f6e2-c6bf-48ee-9f58-e3991ac76799", m.promptId)
+        assertEquals("", m.node)
+    }
+
+    @Test
+    fun executedMarkerToleratesNullNode() {
+        val m = WSMessage.fromJson(
+            """{"type": "executed", "data": {"node": null, "prompt_id": "ef39f6e2-c6bf-48ee-9f58-e3991ac76799"}}"""
+        ) as WSMessage.ExecutedMessage
+        assertEquals("ef39f6e2-c6bf-48ee-9f58-e3991ac76799", m.promptId)
+        assertEquals(emptyList<WSMessage.Image>(), m.output.images)
+    }
+
+    @Test
+    fun progressStateHandlesFloatsAndPicksTheRunningNode() {
+        val m = WSMessage.fromJson(
+            """{"type": "progress_state", "data": {"prompt_id": "cb", "nodes": {
+              "57_13": {"value": 1.0, "max": 1.0, "state": "finished"},
+              "9": {"value": 3.0, "max": 28.0, "state": "running"}
+            }}}"""
+        ) as WSMessage.ProgressStateMessage
+        val active = m.active()!!
+        assertEquals(3.0, active.value, 0.0001)
+        assertEquals(28.0, active.max, 0.0001)
+        assertEquals("running", active.state)
+    }
+
+    @Test
+    fun featureFlagsAckIsRecognized() {
+        val m = WSMessage.fromJson(
+            """{"type": "feature_flags", "data": {"supports_preview_metadata": true}}"""
+        )
+        assertEquals(WSMessage.FeatureFlagsMessage, m)
     }
 
     @Test
