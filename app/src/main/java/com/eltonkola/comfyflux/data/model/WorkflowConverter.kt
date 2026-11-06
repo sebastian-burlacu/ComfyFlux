@@ -130,16 +130,16 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
         return slots
     }
 
-    private fun normLink(l: JsonElement): Link? = when (l) {
-        is JsonArray -> if (l.size >= 5) Link(l[0].jsonPrimitive.int, l[1].jsonPrimitive.int, l[2].jsonPrimitive.int, l[3].jsonPrimitive.int, l[4].jsonPrimitive.int) else null
-        is JsonObject -> Link(
-            l["id"]!!.jsonPrimitive.int,
-            l["origin_id"]!!.jsonPrimitive.int,
-            l["origin_slot"]!!.jsonPrimitive.int,
-            l["target_id"]!!.jsonPrimitive.int,
-            l["target_slot"]!!.jsonPrimitive.int,
-        )
-        else -> null
+    private fun normLink(l: JsonElement): Link? {
+        // Malformed link -> skip it, never crash on a hand-edited file.
+        val nums: List<Int?> = when (l) {
+            is JsonArray -> if (l.size >= 5) l.take(5).map { it.jsonPrimitive.intOrNull } else return null
+            is JsonObject -> listOf("id", "origin_id", "origin_slot", "target_id", "target_slot")
+                .map { l[it]?.jsonPrimitive?.intOrNull }
+            else -> return null
+        }
+        val (id, o, os, t, ts) = nums.map { it ?: return null }
+        return Link(id, o, os, t, ts)
     }
 
     private data class Link(val id: Int, val o: Int, val os: Int, val t: Int, val ts: Int)
@@ -282,7 +282,9 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
         val nodes = graph["nodes"] as? JsonArray
             ?: throw IllegalArgumentException("workflow is not a graph (frontend) format")
         val sgMap = (graph["definitions"]?.jsonObject?.get("subgraphs") as? JsonArray)
-            ?.associate { it.jsonObject["id"]!!.jsonPrimitive.content to it.jsonObject }
+            ?.mapNotNull { sg -> (sg.jsonObject["id"] as? JsonPrimitive)?.contentOrNull
+                ?.let { it to sg.jsonObject } }
+            ?.toMap()
             ?: emptyMap()
         val links = linkMap(graph["links"])
         val w = Workflow()
@@ -294,7 +296,7 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
             val n = el.jsonObject
             val cls = n["type"]?.jsonPrimitive?.contentOrNull ?: return@forEach
             val sg = sgMap[cls] ?: return@forEach
-            val id = n["id"]!!.jsonPrimitive.int
+            val id = n["id"]?.jsonPrimitive?.intOrNull ?: return@forEach
             omaps[id] = sgOutputMap(sg, id.toString(), sgMap)
             val bindings = HashMap(bindingsFor(n, sg, links, omaps))
             // App-side flips of the workflow's own boolean inputs.
@@ -312,7 +314,7 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
         nodes.forEach { el ->
             val n = el.jsonObject
             val cls = n["type"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-            val id = n["id"]!!.jsonPrimitive.int
+            val id = n["id"]?.jsonPrimitive?.intOrNull ?: return@forEach
             val sg = sgMap[cls]
             if (sg != null) {
                 val p = id.toString()
@@ -323,7 +325,7 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
                     if (sgMap.containsKey(innerCls)) {
                         throw IllegalArgumentException("nested subgraphs are not supported")
                     }
-                    nodeEntry(inner, "${p}_", innerLinks, binds[p])?.let { w["${p}_${inner["id"]!!.jsonPrimitive.int}"] = it }
+                    nodeEntry(inner, "${p}_", innerLinks, binds[p])?.let { inner["id"]?.jsonPrimitive?.intOrNull?.let { innerId -> w["${p}_$innerId"] = it } }
                 }
             } else {
                 nodeEntry(n, "", links, null)?.let { w[id.toString()] = it }
