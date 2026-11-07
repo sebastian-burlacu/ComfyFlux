@@ -3,6 +3,8 @@ package com.eltonkola.comfyflux.app.drawer
 import android.annotation.SuppressLint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -127,79 +129,92 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
                     val visible = filterHistory(uiState.history, uiState.triage, uiState.triageFilter)
                     var confirmDiscard by remember { mutableStateOf(false) }
 
-                    TriageFilterBar(
-                        counts = triageCounts(uiState.history, uiState.triage),
-                        selected = uiState.triageFilter,
-                        discarded = uiState.triage.values.count { it == Triage.Discarded },
-                        onSelect = { viewModel.setTriageFilter(it) },
-                        onDeleteDiscarded = { confirmDiscard = true }
-                    )
-                    if (confirmDiscard) {
-                        AlertDialog(
-                            onDismissRequest = { confirmDiscard = false },
-                            title = { Text("Delete the discarded runs?") },
-                            text = {
-                                Text(
-                                    "Everything marked discarded is deleted on the server " +
-                                            "(its images too). Your kept and unmarked runs stay."
-                                )
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        confirmDiscard = false
-                                        viewModel.deleteDiscarded()
-                                    }
-                                ) { Text("Delete") }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { confirmDiscard = false }) { Text("Keep them") }
-                            }
+                    // Column, not the Box's default stacking: the chip row has to
+                    // sit ABOVE the list, or it draws straight over the first run.
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        TriageFilterBar(
+                            counts = triageCounts(uiState.history, uiState.triage),
+                            selected = uiState.triageFilter,
+                            discarded = uiState.triage.values.count { it == Triage.Discarded },
+                            onSelect = { viewModel.setTriageFilter(it) },
+                            onDeleteDiscarded = { confirmDiscard = true }
                         )
-                    }
-
-                    if (visible.isEmpty()) {
-                        Text(
-                            text = when (uiState.triageFilter) {
-                                TriageFilter.Kept -> "Nothing marked kept yet - tap the star on a run you want to keep."
-                                TriageFilter.Discarded -> "Nothing marked discarded. Mark the bad ones, then delete them in one go."
-                                TriageFilter.Unmarked -> "Every run here is marked."
-                                TriageFilter.All -> "No History. Start creating something!"
-                            },
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-
-                        items(visible) { row ->
-                            HistoryRowUi(row, openMedia = { media, index ->
-                                viewModel.viewMedia(media, index)
-                                navController.navigate(AppScreens.ImageViewer.screenName)
-
-                            },
-                                onDelete = {
-                                    viewModel.deleteHistory(row.id)
+                        if (confirmDiscard) {
+                            AlertDialog(
+                                onDismissRequest = { confirmDiscard = false },
+                                title = { Text("Delete the discarded runs?") },
+                                text = {
+                                    Text(
+                                        "Everything marked discarded is deleted on the server " +
+                                                "(its images too). Your kept and unmarked runs stay."
+                                    )
                                 },
-                                mark = uiState.triage[row.id],
-                                onMark = { newMark -> viewModel.setTriage(row.id, newMark) },
-                                onRerun = {
-                                    viewModel.rerunFromHistory(row)
+                                confirmButton = {
+                                    TextButton(
+                                        onClick = {
+                                            confirmDiscard = false
+                                            viewModel.deleteDiscarded()
+                                        }
+                                    ) { Text("Delete") }
                                 },
-                                onUseSettings = {
-                                    viewModel.applyRunSettings(row)
+                                dismissButton = {
+                                    TextButton(onClick = { confirmDiscard = false }) { Text("Keep them") }
                                 }
                             )
-                            Spacer(modifier = Modifier.size(1.dp))
                         }
 
+                        if (visible.isEmpty()) {
+                            Text(
+                                text = when (uiState.triageFilter) {
+                                    TriageFilter.Kept -> "Nothing marked kept yet - tap the star on a run you want to keep."
+                                    TriageFilter.Discarded -> "Nothing marked discarded. Mark the bad ones, then delete them in one go."
+                                    TriageFilter.Unmarked -> "Every run here is marked."
+                                    TriageFilter.All -> "No History. Start creating something!"
+                                },
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+
+                            items(visible) { row ->
+                                HistoryRowUi(row, openMedia = { media, index ->
+                                    viewModel.viewMedia(media, index)
+                                    navController.navigate(AppScreens.ImageViewer.screenName)
+
+                                },
+                                    onDelete = {
+                                        viewModel.deleteHistory(row.id)
+                                    },
+                                    mark = uiState.triage[row.id],
+                                    onMark = { newMark -> viewModel.setTriage(row.id, newMark) },
+                                    onRerun = {
+                                        viewModel.rerunFromHistory(row)
+                                    },
+                                    onUseSettings = {
+                                        viewModel.applyRunSettings(row)
+                                    }
+                                )
+                                Spacer(modifier = Modifier.size(1.dp))
+                            }
+
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/** How the app words the server's own status flags on a row header. */
+private fun HistoryItem.outcomeLabel(): String = when {
+    !success -> "failed"
+    completed -> "ok"
+    else -> "interrupted"
 }
 
 /** Filter chips for the local keep/discard marks, plus the bulk delete. */
@@ -212,8 +227,11 @@ fun TriageFilterBar(
     onDeleteDiscarded: () -> Unit
 ) {
     Row(
+        // Scrollable: All/Kept/Discarded/Unmarked plus "Delete N discarded"
+        // overflow a phone width, and a squeezed row used to print over the list.
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -261,7 +279,7 @@ fun HistoryRowUi(
             // Takes the leftover width so the keep/discard buttons never
             // push the summary into a second line on a narrow phone.
             Text(
-                text = "${item.media.summary()} · success: ${item.success} - completed: ${item.completed}",
+                text = "${item.media.summary()} · ${item.outcomeLabel()}",
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
