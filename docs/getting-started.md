@@ -57,8 +57,10 @@ the top instead of under a pile of samples.
    to that shape; move a slider and the app picks the closest offered aspect
    again.
 3. **Advanced** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
-   step count. CFG/steps set to `0` keep whatever the workflow itself defines;
-   any non-zero value overrides every sampler in the graph. This covers the
+   step count. Both fields come pre-filled with the number that workflow really
+   has in its sampler — the label says so, `CFG (workflow: 3.5)` — so you tweak
+   a value instead of guessing what was there. Clearing a field defers to the
+   graph again; any non-zero value overrides every sampler in the graph. This covers the
    newer *guide-graph* workflows too (Qwen Image 2.1, FLUX.2, MiniMax H3, the
    Comfy-Org `RandomNoise` + `CFGGuider`/`BasicGuider` + `BasicScheduler`
    templates), where the knobs are split across nodes: CFG goes to the guider

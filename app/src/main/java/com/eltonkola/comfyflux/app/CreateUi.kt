@@ -968,10 +968,16 @@ fun SeedSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
-    // Local text so a half-typed "7." isn't rewritten to "7.0" under the cursor;
-    // empty input means "0", i.e. keep the workflow's own value.
-    var cfgText by remember { mutableStateOf(if (uiState.cfg > 0f) uiState.cfg.toString() else "") }
-    var stepsText by remember { mutableStateOf(if (uiState.steps > 0) uiState.steps.toString() else "") }
+    // Local text so a half-typed "7." isn't rewritten to "7.0" under the cursor.
+    // Re-seeded when a different workflow (or its own defaults) arrive, so the
+    // box shows the number that graph really has instead of an empty "0 = keep".
+    val guidance = uiState.guidance
+    var cfgText by remember(uiState.workflow.name, guidance?.cfgDefault) {
+        mutableStateOf(uiState.cfg.takeIf { it > 0f }?.trimmedNumber() ?: "")
+    }
+    var stepsText by remember(uiState.workflow.name, guidance?.stepsDefault) {
+        mutableStateOf(uiState.steps.takeIf { it > 0 }?.toString() ?: "")
+    }
 
     Column(
         modifier = Modifier
@@ -998,7 +1004,13 @@ fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainView
                         }
                     }
                 },
-                label = { Text("CFG (0 = keep)", fontSize = 13.sp) },
+                label = {
+                    Text(
+                        text = guidance?.cfgDefault?.let { "CFG (workflow: ${it.trimmedNumber()})" }
+                            ?: "CFG (0 = workflow's own)",
+                        fontSize = 13.sp
+                    )
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
@@ -1017,7 +1029,13 @@ fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainView
                         }
                     }
                 },
-                label = { Text("Steps (0 = keep)", fontSize = 13.sp) },
+                label = {
+                    Text(
+                        text = guidance?.stepsDefault?.let { "Steps (workflow: $it)" }
+                            ?: "Steps (0 = workflow's own)",
+                        fontSize = 13.sp
+                    )
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
@@ -1508,6 +1526,10 @@ private fun ImageSlotRow(
         }
     }
 }
+
+/** "3.5" stays "3.5", "3.0" becomes "3": labels and boxes read like numbers. */
+private fun Float.trimmedNumber(): String =
+    if (this % 1f == 0f) this.toInt().toString() else this.toString()
 
 private fun slotLabel(slot: ImageInput): String = when {
     slot.primary -> "Main image"

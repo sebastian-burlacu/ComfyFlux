@@ -598,6 +598,7 @@ class MainUseCase(
             val groups = detectStrengthGroups(workflow, info, slots.map { it.nodeId }.toSet())
             val samplers = detectSamplerSlots(workflow, info)
             val sizeSlot = detectResolutionSelector(workflow, info)
+            val guidance = workflow.guidanceTargets()
             val toggles = raw?.let { detectWorkflowToggles(it) } ?: emptyList()
             slotsKey = key
             // What this workflow remembers from earlier runs (per server);
@@ -612,6 +613,11 @@ class MainUseCase(
                     state2.withRememberedChoices(remembered, slots, groups, samplers, sizeSlot)
                 }
                 controls.copy(
+                    // "0 = keep the workflow value" is useless when you cannot
+                    // see that value, so an unset field starts at what the
+                    // graph actually holds; typing over it overrides as before.
+                    cfg = controls.cfg.takeIf { it > 0f } ?: guidance.cfgDefault ?: 0f,
+                    steps = controls.steps.takeIf { it > 0 } ?: guidance.stepsDefault ?: 0,
                     modelSlots = slots,
                     strengthGroups = groups,
                     workflowToggles = toggles,
@@ -625,7 +631,7 @@ class MainUseCase(
                     supportsNegativePrompt = workflow.negativeTextTargets().isNotEmpty(),
                     supportsImageInput = workflow.hasImageInput(),
                     workflowNeeds = workflow.needs(),
-                    guidance = workflow.guidanceTargets(),
+                    guidance = guidance,
                     hasMaskInput = workflow.hasMaskConsumer(),
                     graphKnobs = workflow.detectGraphKnobs(info),
                     gaps = workflow.gaps(info),

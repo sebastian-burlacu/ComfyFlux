@@ -39,6 +39,36 @@ class WorkflowCfgStepsTest {
     }
 
     @Test
+    fun theFieldsStartAtWhatTheGraphHolds() {
+        val targets = load(samplersFixture).guidanceTargets()
+
+        // "0 = keep" hid the number that was already there, so you could not
+        // tweak it; the defaults come from the first writable sampler node.
+        assertEquals(20, targets.stepsDefault)
+        assertEquals(3.5f, targets.cfgDefault!!, 0.0001f)
+        assertEquals(true, targets.takesSteps)
+        assertEquals(true, targets.takesCfg)
+    }
+
+    @Test
+    fun defaultsFollowPrimitiveLinksAndVanishWithoutWidgets() {
+        val linked = load(
+            """{
+              "1": {"class_type": "PrimitiveFloat", "inputs": {"value": 1.5}},
+              "2": {"class_type": "KSampler", "inputs": {"cfg": ["1", "value"], "steps": 8}}
+            }"""
+        )
+
+        assertEquals(1.5f, linked.guidanceTargets().cfgDefault!!, 0.0001f)
+        assertEquals(8, linked.guidanceTargets().stepsDefault)
+
+        // No widget at all: nothing to advertise, the fields stay "workflow's own".
+        val bare = load("""{"7": {"class_type": "CLIPTextEncode", "inputs": {"text": "x"}}}""")
+        assertNull(bare.guidanceTargets().cfgDefault)
+        assertNull(bare.guidanceTargets().stepsDefault)
+    }
+
+    @Test
     fun otherInputsSurviveThePatchUntouched() {
         val wf = load(samplersFixture)
         val samplerBefore = wf.getValue("3").inputs.jsonObject

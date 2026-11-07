@@ -492,7 +492,10 @@ data class GuidanceTargets(
     val stepsNodeIds: List<String>,
     val cfgNodeIds: List<String>,
     /** Steps are typed in as a sigma list somewhere in the graph. */
-    val fixedSigmaSchedule: Boolean
+    val fixedSigmaSchedule: Boolean,
+    /** What the graph itself has in those widgets, so the UI can show it. */
+    val stepsDefault: Int? = null,
+    val cfgDefault: Float? = null
 ) {
     val takesSteps: Boolean get() = stepsNodeIds.isNotEmpty()
     val takesCfg: Boolean get() = cfgNodeIds.isNotEmpty()
@@ -525,7 +528,19 @@ fun Workflow.guidanceTargets(): GuidanceTargets {
     return GuidanceTargets(
         stepsNodeIds = steps,
         cfgNodeIds = cfg,
-        fixedSigmaSchedule = any { it.value.classType in SIGMA_LIST_NODES }
+        fixedSigmaSchedule = any { it.value.classType in SIGMA_LIST_NODES },
+        // First writable node wins: templates keep one sampler, and showing a
+        // number the graph really contains beats "0 = keep".
+        stepsDefault = steps.firstOrNull()?.let { id ->
+            CFG_STEPS_INPUTS.getValue(getValue(id).classType)["steps"]?.let { input ->
+                widgetValue(id, input)?.toFloatOrNull()?.toInt()
+            }
+        },
+        cfgDefault = cfg.firstOrNull()?.let { id ->
+            CFG_STEPS_INPUTS.getValue(getValue(id).classType)["cfg"]?.let { input ->
+                widgetValue(id, input)?.toFloatOrNull()
+            }
+        }
     )
 }
 
