@@ -43,7 +43,7 @@ class Notifier(private val context: Application) {
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_comfyflux)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -84,7 +84,7 @@ class Notifier(private val context: Application) {
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_comfyflux)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(pendingIntent)

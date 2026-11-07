@@ -94,7 +94,7 @@ class GenerationService : Service(), KoinComponent {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_comfyflux)
             .setContentTitle(
                 if (percent in 1..99) "Generating - $percent%" else "Generating"
             )
