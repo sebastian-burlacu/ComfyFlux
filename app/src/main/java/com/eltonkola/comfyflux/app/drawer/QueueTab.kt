@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -44,6 +45,7 @@ import com.eltonkola.comfyflux.components.HelpIconButton
 fun QueueTab(viewModel: MainViewModel) {
 
     val uiState by viewModel.queueUiState.collectAsState()
+    val settings by viewModel.uiState.collectAsState()
 
     LaunchedEffect(key1 = Unit) {
         if (uiState.queue == null) {
@@ -100,6 +102,31 @@ fun QueueTab(viewModel: MainViewModel) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize()
                     ) {
+
+                        item {
+                            // ComfyUI 0.43 cannot reorder jobs that are already
+                            // queued; it can only put a NEW job in front via
+                            // POST /prompt {"front": true}.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = "New jobs run next", fontSize = 16.sp)
+                                    Text(
+                                        text = "Create puts your next job ahead of everything pending. Jobs already in the queue keep their order.",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = settings.queueNextJobs,
+                                    onCheckedChange = { viewModel.setQueueNext(it) }
+                                )
+                            }
+                        }
 
                         item {
                             Text(
@@ -180,7 +207,7 @@ fun QueueRowUi(item: Queue.Item, isRunning: Boolean, onCancel: (Queue.Item) -> U
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            // #<position> is the /queue delete handle; servers may omit it.
+            // Position is display-only: the delete call keys on the prompt id.
             val idLine = if (item.number != null) "#${item.number} ${item.id}" else item.id
             Text(text = idLine, fontSize = 10.sp)
             Spacer(modifier = Modifier.size(4.dp))
@@ -189,11 +216,10 @@ fun QueueRowUi(item: Queue.Item, isRunning: Boolean, onCancel: (Queue.Item) -> U
         HelpIconButton(
             onClick = { onCancel(item) },
             imageVector = if (isRunning) Ikona.Stop else Ikona.Cancel,
-            // Without a queue position the delete call has nothing to address.
-            enabled = isRunning || item.number != null,
+            enabled = isRunning || item.id.isNotBlank(),
             help = when {
                 isRunning -> "Interrupt this running generation"
-                item.number == null -> "This server did not report a queue position for the job"
+                item.id.isBlank() -> "The server did not report a prompt id for this job"
                 else -> "Remove this job from the queue"
             }
         )

@@ -93,7 +93,12 @@ the top instead of under a pile of samples.
    Create and the size sliders snap to the first photo's aspect ratio (a
    square latent fed a portrait photo is what makes outputs look cropped).
    Picks are for this app session; re-picking the same photo doesn't
-   re-upload it.
+   re-upload it. When the graph consumes a **MASK** (`SetLatentNoiseMask`,
+   `InpaintModelConditioning`, `LoadImageMask`), each picked photo gets a
+   **Mask** button: paint over the areas to regenerate, then Apply. The mask
+   rides in the photo's own alpha channel (ComfyUI reads masks off alpha), so
+   that slot uploads a fresh file and *Mask ✓* with the clear icon drops the
+   paint. Workflows without a mask input show no button - it would do nothing.
 5. **Models** (Advanced tab): when the workflow loads model files the server
    can list (checkpoints, UNETs, LoRAs, VAEs, CLIPs, ControlNets), a dropdown
    appears for each — the same "pick your safetensors" step as in the web UI,
@@ -112,12 +117,22 @@ the top instead of under a pile of samples.
    *use the workflow's value* reset. Strengths the graph computes itself (the
    input is fed by another node that isn't a plain number box) are left alone
    rather than snapped to a literal.
-7. **Prompt presets** (Prompt tab, under the prompt box): save the prompt you
+7. **Graph knobs** (Advanced tab, under strengths): widgets your graph
+   exposes that no panel above owns - `FluxGuidance.guidance`,
+   `ModelSamplingSD3.shift`, or a custom node's own sliders and dropdowns -
+   listed per node and driven by one control each. Detection is generic over
+   the server's specs (FLOAT/INT/BOOLEAN/COMBO), so an unusual node shows up
+   without waiting for a whitelist entry; inputs other panels already drive
+   (prompt, models, sampler, size, CFG/steps/seed) never appear twice. Linked
+   values are written through their source primitive box rather than being
+   flattened, and *use the workflow's value* restores the graph's own number.
+   Selections persist per workflow like the other Settings.
+8. **Prompt presets** (Prompt tab, under the prompt box): save the prompt you
    just wrote with a name and comma-separated tags, star the keepers, and tap
    **Apply** to drop any of them into the prompt box. Search covers name,
    text and tags; the tag chips filter. Presets live on the phone, so they
    work with any workflow and survive server restarts.
-8. Hit **Create**. Progress, current node and queue position show live;
+9. Hit **Create**. Progress, current node and queue position show live;
    while sampling runs the preview grid shows the **live latent preview**
    streamed from the server (ComfyUI 0.43+). An ongoing notification tracks
    the run, so the generation keeps going (and stays visible) when you leave

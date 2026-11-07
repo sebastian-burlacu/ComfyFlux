@@ -56,7 +56,7 @@ data class StrengthSlot(
 // Strength widgets the app exposes beside a model file choice. "strength" is
 // the bare knob apply nodes use (ControlNet applies, adapters); the stacked
 // forms belong to multi-lora loaders, where lora_0 pairs with strength_0.
-private val STRENGTH_INPUTS = mapOf(
+internal val STRENGTH_INPUTS = mapOf(
     "strength_model" to "model",
     "strength_clip" to "CLIP",
     "strength" to "strength"

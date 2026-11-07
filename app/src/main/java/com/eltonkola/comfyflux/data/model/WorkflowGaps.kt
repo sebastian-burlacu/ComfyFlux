@@ -49,7 +49,7 @@ internal fun objectInfoChoices(objectInfo: JsonObject, classType: String, input:
     return groups.firstOrNull { it.containsKey(input) }?.get(input)?.declaredOptions()
 }
 
-private fun JsonElement?.declaredOptions(): List<String>? {
+internal fun JsonElement?.declaredOptions(): List<String>? {
     val array = this as? JsonArray ?: return null
     if (array.isEmpty()) return null
     val candidates: JsonArray = when (val first = array.first()) {
@@ -59,10 +59,15 @@ private fun JsonElement?.declaredOptions(): List<String>? {
         is JsonObject -> first["options"] as? JsonArray ?: return null
         else -> {
             val text = (first as? JsonPrimitive)?.contentOrNull
-            if (text == "COMBO") (array.getOrNull(1) as? JsonObject)?.let { it["options"] as? JsonArray }
-                ?: return null
-            // flat file list straight from the loader node type
-            array
+            if (text == "COMBO") {
+                // The declared window is in the second element; the block above
+                // must not fall through to the raw spec.
+                val meta = array.getOrNull(1) as? JsonObject ?: return null
+                meta["options"] as? JsonArray ?: return null
+            } else {
+                // flat file list straight from the loader node type
+                array
+            }
         }
     }
     val strings = candidates.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }

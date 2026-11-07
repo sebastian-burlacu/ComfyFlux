@@ -245,6 +245,22 @@ class MainViewModel(
         }
     }
 
+    fun setGraphKnob(key: String, value: String?) {
+        mainUseCase.setGraphKnob(key, value)
+    }
+
+    fun setPaintedMask(mask: com.eltonkola.comfyflux.data.model.PaintedMask) {
+        mainUseCase.setPaintedMask(mask)
+    }
+
+    fun clearPaintedMask() {
+        mainUseCase.clearPaintedMask()
+    }
+
+    fun setQueueNext(enabled: Boolean) {
+        mainUseCase.setQueueNext(enabled)
+    }
+
     fun clearQueue() {
         viewModelScope.launch {
             mainUseCase.clearQueue()

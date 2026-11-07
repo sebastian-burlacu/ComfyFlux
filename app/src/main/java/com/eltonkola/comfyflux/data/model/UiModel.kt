@@ -127,6 +127,16 @@ data class ImageGenerationUiState(
     val workflowNeeds: WorkflowNeeds? = null,
     // Which of CFG/Steps this graph can actually take (null = not analysed yet).
     val guidance: GuidanceTargets? = null,
+    // Painting offered only when the graph consumes a MASK somewhere.
+    val hasMaskInput: Boolean = false,
+    // Painted area for one image slot (null = no mask; painting starts on demand).
+    val paintedMask: PaintedMask? = null,
+    // Per-node knobs the graph exposes beyond the dedicated controls.
+    val graphKnobs: List<GraphKnob> = emptyList(),
+    // Picked values, keyed "nodeId|input" (string-encoded, see applyGraphKnobs).
+    val graphKnobOverrides: Map<String, String> = emptyMap(),
+    // New jobs jump ahead of the pending queue (POST /prompt {"front": true}).
+    val queueNextJobs: Boolean = false,
     // What this workflow asks for that the server cannot provide; drives the
     // "your server is missing" card before the run, not only after it fails.
     val gaps: WorkflowGaps = WorkflowGaps(),

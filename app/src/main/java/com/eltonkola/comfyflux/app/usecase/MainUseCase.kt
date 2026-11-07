@@ -14,10 +14,14 @@ import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.TemplateBrowserState
 import com.eltonkola.comfyflux.data.model.PromptRequest
+import com.eltonkola.comfyflux.data.model.ImagePick
+import com.eltonkola.comfyflux.data.model.PaintedMask
+import com.eltonkola.comfyflux.data.model.hasMaskConsumer
+import com.eltonkola.comfyflux.data.model.rasterizeMask
+import com.eltonkola.comfyflux.data.model.compositeMaskPixels
 import com.eltonkola.comfyflux.data.model.Workflow
 import com.eltonkola.comfyflux.data.model.WorkflowConverter
 import com.eltonkola.comfyflux.data.model.WorkflowFile
-import com.eltonkola.comfyflux.data.model.ImagePick
 import com.eltonkola.comfyflux.data.model.applyInputImages
 import com.eltonkola.comfyflux.data.model.imageInputs
 import com.eltonkola.comfyflux.data.model.RunParams
@@ -32,6 +36,8 @@ import com.eltonkola.comfyflux.data.model.applySamplerChoices
 import com.eltonkola.comfyflux.data.model.fitToAspect
 import com.eltonkola.comfyflux.data.model.SIZE_STEPS
 import com.eltonkola.comfyflux.data.model.applyStrengthOverrides
+import com.eltonkola.comfyflux.data.model.applyGraphKnobs
+import com.eltonkola.comfyflux.data.model.detectGraphKnobs
 import com.eltonkola.comfyflux.data.model.finishedForeignRuns
 import com.eltonkola.comfyflux.data.model.detectModelSlots
 import com.eltonkola.comfyflux.data.model.detectStrengthGroups
@@ -370,22 +376,76 @@ class MainUseCase(
     private suspend fun uploadInputImages(prompt: Workflow) {
         val picks = _uiState.value.imagePicks
         if (picks.isEmpty() || !prompt.hasImageInput()) return
+        val painted = _uiState.value.paintedMask?.takeUnless { it.isEmpty }
         val assignments = picks.entries
             .filter { prompt.containsKey(it.key) }
             .map { (slotId, pick) ->
-                slotId to uploadedInputs.getOrPut(pick.uri) {
-                    val uri = android.net.Uri.parse(pick.uri)
-                    val mimeType = applicationContext.contentResolver.getType(uri) ?: "image/jpeg"
-                    val bytes = withContext(Dispatchers.IO) {
-                        applicationContext.contentResolver.openInputStream(uri)?.readBytes()
-                    } ?: throw Exception("Could not read ${pick.name} - pick it again and tap Create")
-                    withContext(Dispatchers.IO) {
-                        fluxAPI.uploadImage(pick.name, bytes, mimeType)
+                slotId to if (painted != null && painted.slotId == slotId) {
+                    // The mask rides in the photo's alpha channel, so this slot
+                    // uploads a new file every time the mask changed.
+                    uploadMaskedPhoto(pick, painted)
+                } else {
+                    uploadedInputs.getOrPut(pick.uri) {
+                        val uri = android.net.Uri.parse(pick.uri)
+                        val mimeType = applicationContext.contentResolver.getType(uri) ?: "image/jpeg"
+                        val bytes = withContext(Dispatchers.IO) {
+                            applicationContext.contentResolver.openInputStream(uri)?.readBytes()
+                        } ?: throw Exception("Could not read ${pick.name} - pick it again and tap Create")
+                        withContext(Dispatchers.IO) {
+                            fluxAPI.uploadImage(pick.name, bytes, mimeType)
+                        }
                     }
                 }
             }
             .toMap()
         prompt.applyInputImages(assignments)
+    }
+
+    /** Store the painted area for one image slot; applied when Create uploads. */
+    fun setPaintedMask(mask: PaintedMask) {
+        _uiState.update { it.copy(paintedMask = mask.takeUnless { m -> m.isEmpty }) }
+    }
+
+    fun clearPaintedMask() {
+        _uiState.update { it.copy(paintedMask = null) }
+    }
+
+    /**
+     * Composite the painted area into the photo's alpha channel and upload the
+     * result: ComfyUI's LoadImage derives its MASK output from alpha, which is
+     * how inpaint workflows get the mask without any custom node.
+     */
+    private suspend fun uploadMaskedPhoto(pick: ImagePick, painted: PaintedMask): String =
+        withContext(Dispatchers.IO) {
+            val uri = android.net.Uri.parse(pick.uri)
+            val decoded = applicationContext.contentResolver.openInputStream(uri)
+                ?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                ?: throw Exception("Could not read ${pick.name} - pick it again and tap Create")
+            // Cap the long edge: a 12 MP phone photo is a 48 MB int array.
+            val scale = (2048f / maxOf(decoded.width, decoded.height)).coerceAtMost(1f)
+            val width = (decoded.width * scale).toInt().coerceAtLeast(1)
+            val height = (decoded.height * scale).toInt().coerceAtLeast(1)
+            val bitmap = if (scale < 1f) {
+                android.graphics.Bitmap.createScaledBitmap(decoded, width, height, true)
+            } else decoded
+            val pixels = IntArray(width * height)
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+            val paintedMap = rasterizeMask(painted.strokes, width, height)
+            bitmap.setPixels(compositeMaskPixels(pixels, paintedMap), 0, width, 0, 0, width, height)
+            val bytes = java.io.ByteArrayOutputStream()
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bytes)
+            val name = "comfyflux-mask-${System.currentTimeMillis()}.png"
+            fluxAPI.uploadImage(name, bytes.toByteArray(), "image/png")
+        }
+
+    /** Set (or clear, with null) one per-node knob; applied at Create. */
+    fun setGraphKnob(key: String, value: String?) {
+        _uiState.update { state ->
+            val map = HashMap(state.graphKnobOverrides)
+            if (value == null || value.isBlank()) map.remove(key) else map[key] = value
+            state.copy(graphKnobOverrides = map)
+        }
+        persistChoices()
     }
 
     suspend fun checkStatus() {
@@ -565,6 +625,8 @@ class MainUseCase(
                     supportsImageInput = workflow.hasImageInput(),
                     workflowNeeds = workflow.needs(),
                     guidance = workflow.guidanceTargets(),
+                    hasMaskInput = workflow.hasMaskConsumer(),
+                    graphKnobs = workflow.detectGraphKnobs(info),
                     gaps = workflow.gaps(info),
                     imageInputs = workflow.imageInputs(),
                     // Picked photos only make sense for the slots the
@@ -747,6 +809,7 @@ class MainUseCase(
             }
         }
         workflow.applyStrengthOverrides(_uiState.value.strengthOverrides)
+        workflow.applyGraphKnobs(_uiState.value.graphKnobOverrides)
         workflow.applySamplerChoices(
             sampler = _uiState.value.samplerChoice,
             scheduler = _uiState.value.schedulerChoice,
@@ -771,6 +834,11 @@ class MainUseCase(
         return PromptRequest(fluxAPI.clientId, workflow)
     }
 
+    /** New jobs jump ahead of what is already pending (submit-time priority). */
+    fun setQueueNext(enabled: Boolean) {
+        _uiState.update { it.copy(queueNextJobs = enabled) }
+    }
+
     suspend fun generateImages(start: () -> Unit, stop: () -> Unit) {
         if (uiState.value.prompt.isBlank()) {
             return
@@ -791,7 +859,7 @@ class MainUseCase(
             val prompt = loadWorkflow()
             uploadInputImages(prompt.prompt)
             withContext(Dispatchers.IO) {
-                fluxAPI.generateImage(prompt)
+                fluxAPI.generateImage(prompt, front = uiState.value.queueNextJobs)
             }
             if (fluxAPI.progressUiState.value.error.isEmpty()) {
                 addRecentPrompt(uiState.value.prompt)

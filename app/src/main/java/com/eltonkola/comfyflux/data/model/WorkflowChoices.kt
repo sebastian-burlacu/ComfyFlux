@@ -20,7 +20,8 @@ data class WorkflowChoices(
     // 0 = "use the workflow's own value", which is itself a choice worth
     // remembering, so these are plain (nullable) copies of the sliders.
     val cfg: Float = 0f,
-    val steps: Int = 0
+    val steps: Int = 0,
+    val graphKnobOverrides: Map<String, String> = emptyMap()
 )
 
 /**
@@ -46,7 +47,8 @@ fun ImageGenerationUiState.withRememberedChoices(
         denoise = stored.denoise,
         aspectChoice = stored.aspectChoice,
         cfg = stored.cfg,
-        steps = stored.steps
+        steps = stored.steps,
+        graphKnobOverrides = stored.graphKnobOverrides
     )
     return remembered.prunedTo(slots, groups, samplers, sizeSlot)
 }
@@ -71,7 +73,11 @@ fun ImageGenerationUiState.prunedTo(
     samplerChoice = samplerChoice?.takeIf { samplers.samplerOptions.contains(it) },
     schedulerChoice = schedulerChoice?.takeIf { samplers.schedulerOptions.contains(it) },
     denoise = if (samplers.hasDenoise) denoise else null,
-    aspectChoice = sizeSlot?.let { slot -> aspectChoice?.takeIf { slot.aspectOptions.contains(it) } }
+    aspectChoice = sizeSlot?.let { slot -> aspectChoice?.takeIf { slot.aspectOptions.contains(it) } },
+    // Knobs a graph no longer declares (node edited away) are dropped, not sent.
+    graphKnobOverrides = graphKnobOverrides.filterKeys { key ->
+        graphKnobs.any { it.key == key }
+    }
 )
 
 /** Snapshot the live choices for persistence. */
@@ -83,5 +89,6 @@ fun ImageGenerationUiState.asWorkflowChoices(): WorkflowChoices = WorkflowChoice
     denoise = denoise,
     aspectChoice = aspectChoice,
     cfg = cfg,
-    steps = steps
+    steps = steps,
+    graphKnobOverrides = graphKnobOverrides
 )

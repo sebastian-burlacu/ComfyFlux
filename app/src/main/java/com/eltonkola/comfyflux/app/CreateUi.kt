@@ -10,6 +10,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import com.eltonkola.comfyflux.app.presets.PromptPresetsSection
 import com.eltonkola.comfyflux.data.model.SIZE_STEPS
+import com.eltonkola.comfyflux.data.model.GraphKnob
+import com.eltonkola.comfyflux.data.model.GraphKnobKind
 import com.eltonkola.comfyflux.data.model.nearestAspect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -308,6 +310,8 @@ fun PromptTab(
     val keyboardController = LocalSoftwareKeyboardController.current
     // Which LoadImage slot the picker answers; "all" = one photo for every slot.
     var pendingSlot by remember { mutableStateOf<String?>(null) }
+    // Slot being painted over; the dialog paints the photo that slot already holds.
+    var maskSlot by remember { mutableStateOf<String?>(null) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -454,9 +458,30 @@ fun PromptTab(
         // phone; it is uploaded to the server on Create and written into
         // the node automatically. Placed right under the prompt box and
         // boxed - at the bottom of the tab it was easy to miss.
-        ImageNeedsCard(uiState, viewModel, pendingSlot) { slot ->
-            pendingSlot = slot
-            imagePicker.launch("image/*")
+        ImageNeedsCard(
+            uiState = uiState,
+            viewModel = viewModel,
+            pendingSlot = pendingSlot,
+            onPick = { slot ->
+                pendingSlot = slot
+                imagePicker.launch("image/*")
+            },
+            onMask = { slot -> maskSlot = slot }
+        )
+
+        maskSlot?.let { slot ->
+            uiState.imagePicks[slot]?.let { pick ->
+                MaskEditorDialog(
+                    photoUri = pick.uri,
+                    slotId = slot,
+                    initial = uiState.paintedMask?.takeIf { it.slotId == slot },
+                    onDismiss = { maskSlot = null },
+                    onApply = { mask ->
+                        viewModel.setPaintedMask(mask)
+                        maskSlot = null
+                    }
+                )
+            }
         }
 
         if (uiState.supportsNegativePrompt) {
@@ -542,6 +567,8 @@ fun AdvancedTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
         ModelSlotsSelector(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
         StrengthGroupsSection(uiState = uiState, viewModel = viewModel)
+        Spacer(modifier = Modifier.height(8.dp))
+        GraphOverridesSection(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
         WorkflowSwitchesSelector(uiState = uiState, viewModel = viewModel)
         // The History/Create bar floats over the tab content; keep the last
@@ -1321,7 +1348,8 @@ fun ImageNeedsCard(
     uiState: ImageGenerationUiState,
     viewModel: MainViewModel,
     pendingSlot: String?,
-    onPick: (String) -> Unit
+    onPick: (String) -> Unit,
+    onMask: (String) -> Unit
 ) {
     val needs = uiState.workflowNeeds
     if (!uiState.supportsImageInput && needs == null) return
@@ -1365,8 +1393,12 @@ fun ImageNeedsCard(
                     slot = slot,
                     uiState = uiState,
                     active = pendingSlot == slot.id,
+                    maskAvailable = uiState.hasMaskInput,
+                    masked = uiState.paintedMask?.slotId == slot.id,
                     onPick = { onPick(slot.id) },
-                    onClear = { viewModel.setInputImage(slot.id, "") }
+                    onClear = { viewModel.setInputImage(slot.id, "") },
+                    onMask = { onMask(slot.id) },
+                    onClearMask = { viewModel.clearPaintedMask() }
                 )
             }
             if (uiState.imageInputs.size > 1) {
@@ -1397,8 +1429,12 @@ private fun ImageSlotRow(
     slot: ImageInput,
     uiState: ImageGenerationUiState,
     active: Boolean,
+    maskAvailable: Boolean,
+    masked: Boolean,
     onPick: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onMask: () -> Unit,
+    onClearMask: () -> Unit
 ) {
     val pick = uiState.imagePicks[slot.id]
     Row(
@@ -1445,6 +1481,22 @@ private fun ImageSlotRow(
         OutlinedButton(onClick = onPick) {
             Text(text = if (pick == null) "Choose" else "Change", fontSize = 13.sp)
         }
+        // Painting only appears where the graph consumes a MASK: elsewhere
+        // it would be a button that changes nothing.
+        if (maskAvailable && pick != null) {
+            TextButton(onClick = onMask) {
+                Text(text = if (masked) "Mask ✓" else "Mask", fontSize = 13.sp)
+            }
+            if (masked) {
+                HelpIconButton(
+                    onClick = onClearMask,
+                    imageVector = Ikona.Clean,
+                    size = 34.dp,
+                    iconSize = 18.dp,
+                    help = "Drop the painted mask"
+                )
+            }
+        }
         if (pick != null) {
             HelpIconButton(
                 onClick = onClear,
@@ -1468,4 +1520,127 @@ private fun needsSummary(needs: WorkflowNeeds): String {
     if (needs.usesImageLatent) parts += "output follows your image size"
     needs.encoder?.let { parts += "prompt goes to $it" }
     return parts.joinToString(" \u00b7 ")
+}
+
+/**
+ * Per-node graph tweaks: every widget this workflow exposes that the panels
+ * above do not own (FluxGuidance.guidance, ModelSamplingSD3.shift, custom-node
+ * knobs). One control per input, keyed "nodeId|input"; the workflow's own
+ * value comes back with one tap.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GraphOverridesSection(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
+    val knobs = uiState.graphKnobs
+    if (knobs.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        Text(text = "Graph knobs", style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = "Widgets this workflow exposes beyond the panels above; each belongs to one node.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        knobs.forEach { knob ->
+            val override = uiState.graphKnobOverrides[knob.key]
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${knob.classType} \u00b7 ${knob.input} (node ${knob.nodeId})",
+                fontSize = 13.sp
+            )
+            when (knob.kind) {
+                GraphKnobKind.Boolean -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    val current = override?.toBooleanStrictOrNull()
+                        ?: knob.current.toBooleanStrictOrNull() ?: false
+                    Text(
+                        text = if (current) "on" else "off",
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = current,
+                        onCheckedChange = { viewModel.setGraphKnob(knob.key, it.toString()) }
+                    )
+                }
+
+                GraphKnobKind.Choice -> GraphChoiceRow(
+                    knob = knob,
+                    selected = override ?: knob.current,
+                    onSelect = { viewModel.setGraphKnob(knob.key, it) }
+                )
+
+                else -> {
+                    val current = override?.toFloatOrNull() ?: knob.current.toFloatOrNull() ?: 0f
+                    val lo = knob.min ?: 0f
+                    val hi = knob.max ?: (current * 2f + 10f)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Slider(
+                            value = current.coerceIn(lo, hi),
+                            onValueChange = { value ->
+                                viewModel.setGraphKnob(
+                                    knob.key,
+                                    if (knob.kind == GraphKnobKind.Int) {
+                                        value.toInt().toString()
+                                    } else {
+                                        "%.2f".format(value)
+                                    }
+                                )
+                            },
+                            valueRange = lo..hi,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = if (knob.kind == GraphKnobKind.Int) {
+                                current.toInt().toString()
+                            } else {
+                                "%.2f".format(current)
+                            },
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
+                    }
+                }
+            }
+            if (override != null) {
+                TextButton(onClick = { viewModel.setGraphKnob(knob.key, null) }) {
+                    Text("Use the workflow's value", fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GraphChoiceRow(
+    knob: GraphKnob,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(knob.input, fontSize = 12.sp) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            knob.options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option, fontSize = 13.sp) },
+                    onClick = {
+                        expanded = false
+                        onSelect(option)
+                    }
+                )
+            }
+        }
+    }
 }

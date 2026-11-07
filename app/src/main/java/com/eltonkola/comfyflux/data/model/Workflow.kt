@@ -477,7 +477,7 @@ private val CFG_STEPS_INPUTS = mapOf(
 // Sigma-list nodes: the step count is baked into a literal sigma string, so
 // no widget exists to write. ExtendIntermediateSigmas takes a schedule and
 // stretches it, which is why it is not in the table above.
-private val SIGMA_LIST_NODES = setOf(
+internal val SIGMA_LIST_NODES = setOf(
     "ManualSigmas", "ExtendIntermediateSigmas", "FlipSigmas", "SplitSigmas",
     "SplitSigmasDenoise", "SetFirstSigma", "NormalizeSigmas"
 )
@@ -504,6 +504,16 @@ data class GuidanceTargets(
  * cfg <= 0 / steps <= 0 mean "keep whatever the workflow itself specifies",
  * so each is skipped independently; a node only ever receives what it exposes.
  */
+/** Literal value, or the value of the primitive a link points at. */
+internal fun Workflow.widgetValue(id: String, input: String): String? {
+    val value = this[id]?.inputs?.jsonObject?.get(input) ?: return null
+    if (value is JsonPrimitive) return value.contentOrNull
+    numericWriteTargets(id, input).firstOrNull()?.let { (targetId, targetInput) ->
+        return this[targetId]?.inputs?.jsonObject?.get(targetInput)?.jsonPrimitive?.contentOrNull
+    }
+    return null
+}
+
 fun Workflow.guidanceTargets(): GuidanceTargets {
     val steps = mutableListOf<String>()
     val cfg = mutableListOf<String>()

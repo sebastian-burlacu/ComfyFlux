@@ -8,6 +8,8 @@ import com.eltonkola.comfyflux.data.model.PromptSettlement
 import com.eltonkola.comfyflux.data.model.HistoryItem
 import com.eltonkola.comfyflux.data.model.ProgressGenerationUIState
 import com.eltonkola.comfyflux.data.model.PromptRequest
+import com.eltonkola.comfyflux.data.model.promptPostBody
+import com.eltonkola.comfyflux.data.model.queueDeleteBody
 import com.eltonkola.comfyflux.data.model.Queue
 import com.eltonkola.comfyflux.data.model.SystemStats
 import com.eltonkola.comfyflux.data.model.WSMessage
@@ -316,8 +318,8 @@ class FluxAPI(private val logStore: LogStore) {
         body
     }
 
-    private suspend fun queuePrompt(promptRequest: PromptRequest): String = traced("POST /prompt") {
-        val prompt = Json.encodeToString(promptRequest)
+    private suspend fun queuePrompt(promptRequest: PromptRequest, front: Boolean): String = traced("POST /prompt") {
+        val prompt = promptPostBody(Json.encodeToString(promptRequest), front)
 
         logStore.debug("client", "POST /prompt body ${prompt.length} chars, ${promptRequest.prompt.size} nodes")
         logStore.trace("client", "POST /prompt full request: $prompt")
@@ -428,8 +430,8 @@ class FluxAPI(private val logStore: LogStore) {
     private val settlement = PromptSettlement()
     private var sessionActive = false
 
-    suspend fun generateImage(prompt: PromptRequest) {
-        val promptId = queuePrompt(prompt)
+    suspend fun generateImage(prompt: PromptRequest, front: Boolean = false) {
+        val promptId = queuePrompt(prompt, front)
         rememberLocalPrompt(promptId)
 
         var ownsSession: Boolean
@@ -800,21 +802,16 @@ class FluxAPI(private val logStore: LogStore) {
 
 
     /**
-     * Drop one job from the queue. The server keys jobs by their position
-     * number, so a job whose number the app never read cannot be deleted
-     * (older responses had no number in it).
+     * Drop one job from the queue. ComfyUI 0.43 matches the PROMPT ID when
+     * deleting (`a[1] == id`), so the queue position is display-only.
      */
     suspend fun cancelWorkflow(item: Queue.Item) = traced("POST /queue delete") {
-        val number = item.number
-            ?: run {
-                logStore.warn("client", "queue delete skipped: job ${item.id.take(8)} has no queue number")
-                return@traced
-            }
-        val deleteBody = buildJsonObject {
-            putJsonArray("delete") {
-                add(number)
-            }
-        }.toString()
+        val promptId = item.id
+        if (promptId.isBlank()) {
+            logStore.warn("client", "queue delete skipped: job has no prompt id")
+            return@traced
+        }
+        val deleteBody = queueDeleteBody(promptId)
 
         withContext(Dispatchers.IO) {
             val response = client.post("$serverAddress/queue") {
