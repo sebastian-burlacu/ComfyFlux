@@ -34,6 +34,35 @@ class ResolutionSizeTest {
     }
 
     @Test
+    fun draggingOneAxisWithAPinnedShapeMovesTheOtherToTheClosestStep() {
+        val ratio = aspectRatioOf("16:9 (Wide)")!!
+
+        // The dragged slider lands exactly where you put it; the other one
+        // parks on the nearest offered step instead of warping the shape.
+        assertEquals(768 to 448, dragWidth(768, ratio, SIZE_STEPS))
+        assertEquals(768 to 448, dragHeight(448, ratio, SIZE_STEPS))
+        // Round trip: dragging either axis back to those values is a no-op.
+        assertEquals(768 to 448, dragWidth(dragHeight(448, ratio, SIZE_STEPS).first, ratio, SIZE_STEPS))
+
+        // A square and a tall shape keep their own geometry.
+        assertEquals(512 to 512, dragWidth(512, aspectRatioOf("1:1 (Square)")!!, SIZE_STEPS))
+        assertEquals(320 to 576, dragWidth(320, aspectRatioOf("9:16 (Tall)")!!, SIZE_STEPS))
+
+        // Unreadable ratio: stay square rather than divide by zero.
+        assertEquals(512 to 512, dragWidth(512, 0f, SIZE_STEPS))
+        assertEquals(512 to 512, dragHeight(512, Float.NaN, SIZE_STEPS))
+    }
+
+    @Test
+    fun nearestStepHandlesValuesOutsideTheLadder() {
+        assertEquals(960, nearestStep(SIZE_STEPS, 960))    // already a rung
+        assertEquals(1024, nearestStep(SIZE_STEPS, 4096))  // above the ladder
+        assertEquals(256, nearestStep(SIZE_STEPS, 64))     // below it
+        assertEquals(320, nearestStep(SIZE_STEPS, 300))    // closer to the next rung
+        assertEquals(896, nearestStep(SIZE_STEPS, 928))    // dead centre takes the lower rung
+    }
+
+    @Test
     fun aspectLabelsParseAndSnapToTheNearestOfferedShape() {
         assertEquals(1f, aspectRatioOf("1:1 (Square)")!!, 0.001f)
         assertEquals(16f / 9f, aspectRatioOf("16:9 (Wide)")!!, 0.001f)

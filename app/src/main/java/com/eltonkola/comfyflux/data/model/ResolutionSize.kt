@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlin.math.roundToInt
 
 /**
  * A workflow whose size is produced by a ResolutionSelector node
@@ -80,6 +81,26 @@ fun Workflow.applyResolutionSize(nodeId: String, aspect: String, megapixels: Flo
             "megapixels" to JsonPrimitive((megapixels * 100).toInt() / 100f)
         )
     )
+}
+
+/** Closest offered slider value to [value]; [steps] is assumed ascending. */
+fun nearestStep(steps: List<Int>, value: Int): Int =
+    steps.minByOrNull { kotlin.math.abs(it - value) } ?: value
+
+/**
+ * Drag the width to [width] while keeping [ratio] (width/height). The axis you
+ * dragged lands exactly on the step you picked; the other one parks on the
+ * closest offered step, so the shape does not drift.
+ */
+fun dragWidth(width: Int, ratio: Float, steps: List<Int>): Pair<Int, Int> {
+    if (!ratio.isFinite() || ratio <= 0f) return width to width
+    return width to nearestStep(steps, (width / ratio).roundToInt())
+}
+
+/** [dragHeight] counterpart: height is exact, width follows the ratio. */
+fun dragHeight(height: Int, ratio: Float, steps: List<Int>): Pair<Int, Int> {
+    if (!ratio.isFinite() || ratio <= 0f) return height to height
+    return nearestStep(steps, (height * ratio).roundToInt()) to height
 }
 
 /**

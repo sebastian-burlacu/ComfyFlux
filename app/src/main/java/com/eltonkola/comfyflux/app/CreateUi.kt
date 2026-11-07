@@ -817,29 +817,37 @@ fun ImageSizeSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel)
                 steps = sliderValues.size - 2
             )
         }
-        // Preview scales its AREA with total pixels (1024x1024 fills the
-        // slot, 256x256 is a quarter of it) so the box shows both the
-        // aspect ratio and how big the output actually is.
+        // One linear scale: the box keeps the real width:height ratio and its
+        // longest side fills the slot. The old area-scaling made the width
+        // slider grow the box taller as well, which read as the other
+        // dimension moving by itself; the pixel count is stated as text.
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            val w = uiState.width.toFloat()
+            val h = uiState.height.toFloat()
+            val px = 88f / maxOf(w, h).coerceAtLeast(1f)
             Box(modifier = Modifier.size(96.dp), contentAlignment = Alignment.Center) {
-                val w = uiState.width
-                val h = uiState.height
-                val maxArea = 1024f * 1024f
-                val scale = kotlin.math.sqrt((w * h) / maxArea)
-                val previewH = (96f * scale).coerceAtLeast(28f)
-                val previewW = previewH * w / h
                 Box(
                     modifier = Modifier
-                        .size(width = previewW.dp, height = previewH.dp)
+                        .size(width = (w * px).dp, height = (h * px).dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center
                 ) {}
             }
+            val megapixels = ((w * h) / 10_000f).toInt() / 100f
             Text(
-                text = "${uiState.width}x${uiState.height}",
+                text = "${uiState.width}x${uiState.height} - ${megapixels}MP",
                 fontSize = 12.sp
             )
+            // With a shape pinned, the sliders only move the pixel budget, and
+            // the box says so instead of looking like it moved on its own.
+            uiState.aspectChoice?.let {
+                Text(
+                    text = "shape held: ${it.substringBefore('(').trim()}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
     }

@@ -53,9 +53,13 @@ the top instead of under a pile of samples.
    all do; image-*edit* templates usually take their size from the input photo
    instead), an **Aspect ratio** chip row appears
    under the sliders: the sliders set how many pixels, the chips set the
-   shape, and the preview box follows both. Pick a chip and the sliders snap
-   to that shape; move a slider and the app picks the closest offered aspect
-   again.
+   shape, and the preview box is drawn at the real width:height ratio (the
+   text under it repeats the pixel count and the megapixels). Pick a chip and
+   the sliders snap to that shape **and stay on it**: dragging either slider
+   then moves the pixel budget, the other axis follows the same ratio, and the
+   box says "shape held: 16:9". Tap "Match the aspect to the sliders" to go
+   back to free sliders, where each axis does exactly what you drag and the
+   closest offered aspect is picked when the job is sent.
 3. **Advanced** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
    step count. Both fields come pre-filled with the number that workflow really
    has in its sampler — the label says so, `CFG (workflow: 3.5)` — so you tweak

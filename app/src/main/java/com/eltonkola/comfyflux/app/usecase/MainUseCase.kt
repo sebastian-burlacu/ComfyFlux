@@ -34,6 +34,9 @@ import com.eltonkola.comfyflux.data.model.detectResolutionSelector
 import com.eltonkola.comfyflux.data.model.nearestAspect
 import com.eltonkola.comfyflux.data.model.applyResolutionSize
 import com.eltonkola.comfyflux.data.model.applySamplerChoices
+import com.eltonkola.comfyflux.data.model.dragWidth
+import com.eltonkola.comfyflux.data.model.dragHeight
+import com.eltonkola.comfyflux.data.model.aspectRatioOf
 import com.eltonkola.comfyflux.data.model.fitToAspect
 import com.eltonkola.comfyflux.data.model.SIZE_STEPS
 import com.eltonkola.comfyflux.data.model.applyStrengthOverrides
@@ -193,14 +196,40 @@ class MainUseCase(
     }
 
     fun setImageWidth(width: Int) {
-        // Driving the sliders directly supersedes an explicit aspect pick.
-        _uiState.update { it.copy(width = width, aspectChoice = null) }
+        _uiState.update { state ->
+            val ratio = pinnedRatio(state)
+            if (ratio == null) {
+                // Free sliders: the values are the output size, so an explicit
+                // aspect pick is superseded by what you just dragged.
+                state.copy(width = width, aspectChoice = null)
+            } else {
+                // A shape is pinned (and the node computes the real pixels from
+                // aspect + megapixels): dragging width must not silently warp
+                // it, so the other axis follows the same ratio.
+                val (w, h) = dragWidth(width, ratio, SIZE_STEPS)
+                state.copy(width = w, height = h)
+            }
+        }
         saveDraft()
     }
 
     fun setImageHeight(height: Int) {
-        _uiState.update { it.copy(height = height, aspectChoice = null) }
+        _uiState.update { state ->
+            val ratio = pinnedRatio(state)
+            if (ratio == null) {
+                state.copy(height = height, aspectChoice = null)
+            } else {
+                val (w, h) = dragHeight(height, ratio, SIZE_STEPS)
+                state.copy(width = w, height = h)
+            }
+        }
         saveDraft()
+    }
+
+    /** The ratio the sliders must hold, or null when they are free. */
+    private fun pinnedRatio(state: ImageGenerationUiState): Float? {
+        val label = state.aspectChoice ?: return null
+        return aspectRatioOf(label)
     }
 
     fun setBatchSize(batchSize: Int) {
