@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -25,6 +27,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -69,19 +72,37 @@ fun MainAppScreen(
     val drawerStateRight = rememberDrawerState(initialValue = DrawerValue.Closed)
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    // Drawer states are saveable, so returning from Settings can hand back a
+    // drawer that is logically open while nothing drew it: a full-screen scrim
+    // that swallows every tap. Both start closed on (re)entry.
+    LaunchedEffect(Unit) {
+        drawerStateLeft.close()
+        drawerStateRight.close()
+    }
+
+    // open()/close() suspend until the animation ends, so this flag is the
+    // "one animation at a time" guard: rapid taps used to fire another toggle
+    // into a running animation and leave the scrim out of sync with the sheet.
+    var drawerBusy by remember { mutableStateOf(false) }
+    fun toggle(drawerState: DrawerState) {
+        if (drawerBusy) return
+        scope.launch {
+            drawerBusy = true
+            try {
+                if (drawerState.isClosed) drawerState.open() else drawerState.close()
+            } finally {
+                drawerBusy = false
+            }
+        }
+    }
+
     Scaffold(
 
         topBar = {
             TopAppBar(
                 navigationIcon = {
                     HelpIconButton(
-                        onClick = {
-                            scope.launch {
-                                drawerStateLeft.apply {
-                                    if (isClosed) open() else close()
-                                }
-                            }
-                        },
+                        onClick = { toggle(drawerStateLeft) },
                         imageVector = Ikona.Menu,
                         help = "Open the workflows drawer"
                     )
@@ -100,13 +121,7 @@ fun MainAppScreen(
                     )
 
                     HelpIconButton(
-                        onClick = {
-                            scope.launch {
-                                drawerStateRight.apply {
-                                    if (isClosed) open() else close()
-                                }
-                            }
-                        },
+                        onClick = { toggle(drawerStateRight) },
                         imageVector = Ikona.Search,
                         help = "Open the prompt library"
                     )
@@ -223,11 +238,7 @@ fun MainAppScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         CreateUi(uiState, progressUiState, viewModel, navController) {
-                            scope.launch {
-                                drawerStateLeft.apply {
-                                    if (isClosed) open() else close()
-                                }
-                            }
+                            toggle(drawerStateLeft)
                         }
 
                     }
@@ -235,11 +246,7 @@ fun MainAppScreen(
                 rightContent = {
                     PromptSearch(viewModel) {
                         viewModel.updatePrompt(it)
-                        scope.launch {
-                            drawerStateRight.apply {
-                                if (!isClosed) close()
-                            }
-                        }
+                        scope.launch { drawerStateRight.close() }
                     }
                 },
                 leftContent = {
@@ -250,11 +257,7 @@ fun MainAppScreen(
                         },
                         onSelect = {
                             viewModel.updateWorkflow(it)
-                            scope.launch {
-                                drawerStateLeft.apply {
-                                    if (!isClosed) close()
-                                }
-                            }
+                            scope.launch { drawerStateLeft.close() }
                         }
                     )
                 }
