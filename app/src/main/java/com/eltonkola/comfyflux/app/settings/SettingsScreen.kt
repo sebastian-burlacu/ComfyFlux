@@ -132,16 +132,24 @@ fun SettingsScreen(
 
             //dynamic colors are on android 12+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                Text(
-                    text = "Dynamic color",
-                    fontSize = 20.sp
-                )
-                Switch(
-                    checked = uiState.dynamicColor,
-                    onCheckedChange = {
-                        viewModel.updateDynamicColor(it)
-                    }
-                )
+                // Title left, switch right: same shape as the other toggles,
+                // and no On/Off label repeating what the switch already says.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Dynamic color",
+                        fontSize = 20.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = uiState.dynamicColor,
+                        onCheckedChange = {
+                            viewModel.updateDynamicColor(it)
+                        }
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
