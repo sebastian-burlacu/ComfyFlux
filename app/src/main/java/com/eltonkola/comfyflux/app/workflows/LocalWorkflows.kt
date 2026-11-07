@@ -35,6 +35,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
+import com.eltonkola.comfyflux.data.LogStore
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,7 +55,13 @@ import kotlinx.coroutines.launch
 import com.eltonkola.comfyflux.components.HelpIconButton
 
 
-class FolderViewModel(application: Application) : AndroidViewModel(application) {
+class FolderViewModel(application: Application) : AndroidViewModel(application), KoinComponent {
+
+    // An uncaught throw inside viewModelScope kills the process, and the
+    // document tree is exactly the kind of thing that throws long after the
+    // grant looked fine (folder deleted, provider gone, permission revoked).
+    private val logStore: LogStore by lazy { get() }
+
     private val _files = MutableStateFlow<List<WorkflowFile>>(emptyList())
     val files = _files.asStateFlow()
 
@@ -74,13 +83,33 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         rememberFolderName(uri)
-        viewModelScope.launch(Dispatchers.IO) {
-            val documentsTree = DocumentFile.fromTreeUri(getApplication(), uri)
-            _files.value = documentsTree?.listFiles()
+        viewModelScope.launch(Dispatchers.IO) { listInto(uri) }
+    }
+
+    /**
+     * SAF listing, never fatal: a failure drops the folder state and logs the
+     * reason, instead of taking the app down while the drawer is opening.
+     */
+    private fun listInto(uri: Uri) {
+        val result = runCatching {
+            DocumentFile.fromTreeUri(getApplication(), uri)?.listFiles()
                 ?.filter { it.isFile && it.name?.endsWith(".json", ignoreCase = true) == true }
                 ?.map { it.normalize() }
                 ?: emptyList()
         }
+        result.fold(
+            onSuccess = { _files.value = it },
+            onFailure = { e ->
+                logStore.warn(
+                    "client",
+                    "local workflow folder unread (${e.javaClass.simpleName}: ${e.message}); " +
+                        "pick the folder again"
+                )
+                _files.value = emptyList()
+                _selectedFolder.value = null
+                _hasPermission.value = false
+            }
+        )
     }
 
     /** Human-readable folder name (raw tree URIs are long encoded gibberish). */
@@ -89,8 +118,9 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun rememberFolderName(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
-            val doc = DocumentFile.fromTreeUri(getApplication(), uri)
-            _folderName.value = doc?.name ?: uri.lastPathSegment?.substringAfterLast(':')
+            // name resolves through the document provider, so this can throw too.
+            val name = runCatching { DocumentFile.fromTreeUri(getApplication(), uri)?.name }.getOrNull()
+            _folderName.value = name ?: uri.lastPathSegment?.substringAfterLast(':')
         }
     }
 
@@ -104,23 +134,20 @@ class FolderViewModel(application: Application) : AndroidViewModel(application) 
             // Take persistent permission immediately
             val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            getApplication<Application>().contentResolver.takePersistableUriPermission(
-                uri,
-                takeFlags
-            )
+            runCatching {
+                getApplication<Application>().contentResolver.takePersistableUriPermission(uri, takeFlags)
+            }.onFailure { e ->
+                logStore.warn("client", "folder permission could not be taken: ${e.javaClass.simpleName}")
+            }
 
             if (checkPermission(uri)) {
-                val documentsTree = DocumentFile.fromTreeUri(getApplication(), uri)
-                // Only actual JSON workflow files show up; folders and other
-                // files in there would just fail to load anyway.
-                val fileList = documentsTree?.listFiles()
-                    ?.filter { it.isFile && it.name?.endsWith(".json", ignoreCase = true) == true }
-                    ?.toList() ?: emptyList()
-                _files.value = fileList.map { it.normalize() }
                 _selectedFolder.value = uri
                 _hasPermission.value = true
                 rememberFolderName(uri)
                 saveSelectedFolderUri(uri)
+                // Only actual JSON workflow files show up; folders and other
+                // files in there would just fail to load anyway.
+                listInto(uri)
             } else {
                 _hasPermission.value = false
                 _selectedFolder.value = null

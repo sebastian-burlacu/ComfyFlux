@@ -15,6 +15,7 @@ import com.eltonkola.comfyflux.app.usecase.QueueUseCase
 import com.eltonkola.comfyflux.app.usecase.TimerUseCase
 import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.AppState
+import com.eltonkola.comfyflux.data.CrashJournal
 import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.data.model.TriageStore
 import com.eltonkola.comfyflux.data.Notifier
@@ -58,6 +59,18 @@ class MainApp : Application(), KoinComponent {
         val logStore: LogStore = get()
         logStore.verbose = appSettings.settingsState.value.verboseLogging
         logStore.bodies = appSettings.settingsState.value.logBodies
+
+        // A crash kills the process, and the in-memory log with it: record the
+        // trace on disk first, then let the system handle the death. The last
+        // traces are replayed into the log on the next start, so Settings ->
+        // Logs (and its export file) can show what actually broke.
+        val crashJournal: CrashJournal = get()
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching { crashJournal.record(thread.name, error) }
+            previousHandler?.uncaughtException(thread, error)
+        }
+        crashJournal.recent().forEach { logStore.error("crash", it) }
     }
 }
 
@@ -65,6 +78,7 @@ class MainApp : Application(), KoinComponent {
 private val appModule = module {
 
     single { LogStore() }
+    singleOf(::CrashJournal)
     singleOf(::AppState)
     singleOf(::Notifier)
     singleOf(::GroqAPI)
