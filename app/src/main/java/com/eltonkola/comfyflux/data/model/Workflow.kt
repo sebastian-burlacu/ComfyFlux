@@ -439,7 +439,9 @@ fun Workflow.updateNegativePrompt(prompt: String) {
 fun Workflow.updateSeed(seed: Long) {
     entries.toList().forEach { (id, node) ->
         SEED_INPUTS[node.classType]?.let { key ->
-            replaceInputs(id, mapOf(key to JsonPrimitive(seed)))
+            // Templates often feed the seed from a "Seed" PrimitiveInt node;
+            // write there instead of leaving the link pointing elsewhere.
+            writeNumeric(id, key, JsonPrimitive(seed))
         }
     }
 }

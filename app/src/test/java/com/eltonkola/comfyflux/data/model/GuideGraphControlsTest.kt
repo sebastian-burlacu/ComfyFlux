@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.float
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -200,6 +201,21 @@ class GuideGraphControlsTest {
         assertEquals(false, targets.fixedSigmaSchedule)
         assertTrue(wf.getValue("4").inputs.jsonObject["steps"] is kotlinx.serialization.json.JsonArray)
         assertEquals(1, wf.getValue("9").inputs.jsonObject["a"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun aSeedNodeBehindAPrimitiveIntGetsTheNewSeed() {
+        val wf = json.decodeFromString<Workflow>(
+            "{\n" +
+                    "  \"1\": {\"class_type\": \"RandomNoise\", \"inputs\": {\"noise_seed\": [\"7\", 0]}},\n" +
+                    "  \"7\": {\"class_type\": \"PrimitiveInt\", \"inputs\": {\"value\": 1234}}\n" +
+                    "}"
+        )
+
+        wf.updateSeed(987654321L)
+
+        assertEquals(987654321L, wf.getValue("7").inputs.jsonObject["value"]!!.jsonPrimitive.long)
+        assertTrue(wf.getValue("1").inputs.jsonObject["noise_seed"] is kotlinx.serialization.json.JsonArray)
     }
 
     @Test
