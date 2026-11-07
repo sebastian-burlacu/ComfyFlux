@@ -89,6 +89,9 @@ issue template history shows what's already fixed.
   are announced when they finish while the app is still open - the queue is
   polled in the foreground only, no background service or wake-lock. Swipe the
   app away and neither is watched.
+- Clip playback is the phone's own decoder: mp4 (H.264) and webm play, exotic
+  containers (ProRes `.mov`, some mkv) do not — use **open in another app** on
+  the clip's viewer screen, or save it and play it elsewhere.
 - History reflects the server's history endpoint: purging history in the web
   UI removes those entries (the downloaded images stay in your gallery/history
   viewer).

@@ -181,11 +181,11 @@ fun CreateUi(
                 contentAlignment = Alignment.Center
             ) {
 
-                if (progressUiState.generatedImages.isNotEmpty()) {
-                    ImageGrid(images = progressUiState.generatedImages) {
-                        viewModel.viewImage(
-                            progressUiState.generatedImages,
-                            progressUiState.generatedImages.indexOf(it)
+                if (progressUiState.generatedMedia.isNotEmpty()) {
+                    ImageGrid(media = progressUiState.generatedMedia) {
+                        viewModel.viewMedia(
+                            progressUiState.generatedMedia,
+                            progressUiState.generatedMedia.indexOf(it)
                         )
                         navController.navigate(AppScreens.ImageViewer.screenName)
                     }

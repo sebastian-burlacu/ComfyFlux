@@ -160,9 +160,9 @@ web UI (or another phone) started the run, you still get Stop, not just Clear
 queue, as long as the app is open and watching. When jobs are pending, **Clear
 queue** appears above History and drops every queued job without touching the
 running one. To drop a *single* queued job, open the drawer's **Queue** tab and
-use the remove button on that row; the row shows the server's queue position
-(`#12`), which is the handle the delete call needs — servers that don't report
-it leave the button disabled and say so.
+use the remove button on that row; the delete call addresses the job by its
+prompt id, which every queue entry carries. The `#12` on the row is the
+server's queue position, shown so you can tell which job is which.
 
 Marking runs on the History tab: **☆ keep** / **✕ discard** on a row are marks
 on the *phone* (ComfyUI has no such thing, and nothing is sent to the server).
@@ -170,6 +170,18 @@ The chips above the list then show All / Kept / Discarded / Unmarked with
 counts, and **Delete N discarded** deletes those runs on the server in one go,
 after asking first. Marks are per device and are forgotten for runs that leave
 the server history.
+
+Video and audio workflows work too. `SaveVideo`, `SaveAudio` and the animated
+savers finish a graph with a clip or a track instead of a PNG, and the app files
+those outputs by kind: the batch grid and the History rows show a labelled tile
+instead of a thumbnail, and tapping one opens the viewer, which plays mp4/webm
+clips and audio with a scrub bar. Formats the phone itself cannot decode (a
+ProRes `.mov`, for instance) keep an **open in another app** button, which hands
+the server URL to a player that can. Saving puts clips in `Movies/ComfyFlux` and
+audio in `Music/ComfyFlux` (stills stay in `Pictures`), and the finished-run
+notification says what arrived — "1 video" reads differently from "4 images".
+Clips stream from the server while playing, so they are not part of the image
+cache; saving is the copy that stays on the phone.
 
 The gallery is cached: the first view of an output downloads it, every later
 view (history list, batch grid, viewer) reads from the local image cache, and

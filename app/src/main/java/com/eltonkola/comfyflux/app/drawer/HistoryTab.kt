@@ -51,7 +51,10 @@ import com.eltonkola.comfyflux.app.AppScreens
 import com.eltonkola.comfyflux.app.MainViewModel
 import com.eltonkola.comfyflux.app.thumbnailRequest
 import com.eltonkola.comfyflux.components.LoadingUi
+import com.eltonkola.comfyflux.app.MediaTile
 import com.eltonkola.comfyflux.data.model.HistoryItem
+import com.eltonkola.comfyflux.data.model.MediaItem
+import com.eltonkola.comfyflux.data.model.summary
 import com.eltonkola.comfyflux.data.model.Triage
 import com.eltonkola.comfyflux.data.model.TriageFilter
 import com.eltonkola.comfyflux.data.model.filterHistory
@@ -172,8 +175,8 @@ fun HistoryTab(viewModel: MainViewModel, navController: NavController) {
                     ) {
 
                         items(visible) { row ->
-                            HistoryRowUi(row, openImage = { images, index ->
-                                viewModel.viewImage(images, index)
+                            HistoryRowUi(row, openMedia = { media, index ->
+                                viewModel.viewMedia(media, index)
                                 navController.navigate(AppScreens.ImageViewer.screenName)
 
                             },
@@ -240,7 +243,7 @@ fun TriageFilterBar(
 @Composable
 fun HistoryRowUi(
     item: HistoryItem,
-    openImage: (List<String>, Int) -> Unit,
+    openMedia: (List<MediaItem>, Int) -> Unit,
     onDelete: () -> Unit,
     onRerun: () -> Unit,
     onUseSettings: () -> Unit,
@@ -258,7 +261,7 @@ fun HistoryRowUi(
             // Takes the leftover width so the keep/discard buttons never
             // push the summary into a second line on a narrow phone.
             Text(
-                text = "Nr: ${item.images.size} success: ${item.success} - completed: ${item.completed}",
+                text = "${item.media.summary()} · success: ${item.success} - completed: ${item.completed}",
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -307,18 +310,13 @@ fun HistoryRowUi(
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            if (item.images.isNotEmpty()) {
-                items(item.images) { image ->
-                    AsyncImage(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable {
-                                openImage(item.images, item.images.indexOf(image))
-                            }
-                            .background(MaterialTheme.colorScheme.secondary),
-                        model = thumbnailRequest(LocalContext.current, image, 256),
-                        contentDescription = null,
+            if (item.media.isNotEmpty()) {
+                items(item.media) { media ->
+                    MediaTile(
+                        item = media,
+                        pixelSize = 256,
+                        modifier = Modifier.size(120.dp),
+                        onClick = { openMedia(item.media, item.media.indexOf(media)) }
                     )
                 }
             } else {

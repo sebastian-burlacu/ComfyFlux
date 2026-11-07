@@ -12,14 +12,19 @@ data class HistoryResponse(
 
     @Serializable
     data class Output(
-        val images: List<Image> = emptyList()
+        val images: List<Image> = emptyList(),
+        // SaveVideo / SaveAudio finish their graphs with these instead.
+        val video: List<Image> = emptyList(),
+        val audio: List<Image> = emptyList()
     )
 
     @Serializable
     data class Image(
         val filename: String,
         val subfolder: String,
-        val type: String
+        val type: String,
+        // Present for clips saved under "images" (e.g. "video/mp4").
+        val format: String? = null
     )
 
     @Serializable

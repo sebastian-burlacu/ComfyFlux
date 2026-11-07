@@ -25,6 +25,7 @@ import com.eltonkola.comfyflux.data.model.WorkflowFile
 import com.eltonkola.comfyflux.data.model.applyInputImages
 import com.eltonkola.comfyflux.data.model.imageInputs
 import com.eltonkola.comfyflux.data.model.RunParams
+import com.eltonkola.comfyflux.data.model.summary
 import com.eltonkola.comfyflux.data.model.needs
 import com.eltonkola.comfyflux.data.model.applyModelOverrides
 import com.eltonkola.comfyflux.data.model.hasImageInput
@@ -926,7 +927,14 @@ class MainUseCase(
         if (error.isNotEmpty()) {
             notifier.generationFinished(appState.foreground, success = false, detail = error)
         } else {
-            notifier.generationFinished(appState.foreground, success = true, detail = null)
+            // Say what landed, not just "done": a video run and an image run
+            // look the same otherwise.
+            val outcome = fluxAPI.progressUiState.value.generatedMedia.summary()
+            notifier.generationFinished(
+                appState.foreground,
+                success = true,
+                detail = outcome.takeIf { it != "no outputs" }
+            )
         }
     }
 

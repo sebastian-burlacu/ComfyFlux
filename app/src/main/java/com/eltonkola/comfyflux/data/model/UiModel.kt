@@ -21,7 +21,8 @@ data class QueueUiState(
 )
 
 data class HistoryItem(
-    val images: List<String>,
+    /** Everything the run saved: stills, clips and audio, in server order. */
+    val media: List<MediaItem>,
     val success: Boolean,
     val completed: Boolean,
     val prompt: Workflow,
@@ -45,7 +46,7 @@ data class ProgressGenerationUIState(
     val progress: Int = 0,
     val maxProgress: Int = 0,
     val queueRemaining: Int = 0,
-    val generatedImages: List<String> = emptyList(),
+    val generatedMedia: List<MediaItem> = emptyList(),
     val statusMessage: String = "",
     val error: String = "",
     // Full server failure (node id/type, message, what ran first); empty
@@ -167,7 +168,7 @@ data class TemplateBrowserState(
 )
 
 data class ImageViewerUiState(
-    val images: List<String> = emptyList(),
+    val media: List<MediaItem> = emptyList(),
     val selected: Int = 0
 )
 

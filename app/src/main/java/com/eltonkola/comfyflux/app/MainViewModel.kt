@@ -70,8 +70,8 @@ class MainViewModel(
         }
     }
 
-    fun viewImage(images: List<String> = emptyList(), selected: Int = 0) {
-        imageViewerUseCase.viewImage(images, selected)
+    fun viewMedia(media: List<com.eltonkola.comfyflux.data.model.MediaItem> = emptyList(), selected: Int = 0) {
+        imageViewerUseCase.viewMedia(media, selected)
     }
 
     fun updatePrompt(prompt: String) {

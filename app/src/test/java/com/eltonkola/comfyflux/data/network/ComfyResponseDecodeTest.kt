@@ -60,7 +60,9 @@ class ComfyResponseDecodeTest {
            "6":{"inputs":{"conditioning":["3",0]},"class_type":"CheckpointLoaderSimple",
                 "_meta":{"title":"Load Checkpoint"}}}],
          "outputs":{"9":{"images":[{"filename":"00001-a.png","subfolder":"","type":"output"}]},
-                    "7":{"audio":[{"filename":"a.mp3","subfolder":"","type":"output"}]}},
+                    "7":{"audio":[{"filename":"a.mp3","subfolder":"","type":"output"}]},
+                    "8":{"video":[{"filename":"video/ComfyUI_00001_.mp4","subfolder":"","type":"output"}]},
+                    "10":{"images":[{"filename":"clip.mp4","subfolder":"","type":"output","format":"video/mp4"}]}},
          "status":{"status_str":"success","completed":true,
                    "messages":[["execution_start",{"prompt_id":"d5c6","timestamp":1762345678901}]]},
          "seed":1234567890,"workflow":{"nodes":[]},"extra_data":{"client_id":"abc"}}}
@@ -73,7 +75,22 @@ class ComfyResponseDecodeTest {
             modernHistory
         )
         val entry = history.getValue("d5c6")
-        assertEquals(1, entry.outputs.values.flatMap { it.images }.size)
+        // images carries stills AND format-tagged clips; video/audio are their own keys.
+        assertEquals(2, entry.outputs.values.flatMap { it.images }.size)
+        assertEquals(
+            listOf("video/ComfyUI_00001_.mp4"),
+            entry.outputs.values.flatMap { it.video }.map { it.filename }
+        )
+        assertEquals(
+            listOf("a.mp3"),
+            entry.outputs.values.flatMap { it.audio }.map { it.filename }
+        )
+        assertEquals(
+            "video/mp4",
+            entry.outputs.getValue("10").images.first().format
+        )
+        // History on older builds has no video/audio members at all.
+        assertEquals(emptyList<HistoryResponse.Image>(), entry.outputs.getValue("9").video)
         assertEquals(true, entry.status.completed)
     }
 

@@ -172,6 +172,22 @@ class WSMessageTest {
     }
 
     @Test
+    fun executedMessageCarriesVideoAndAudioOutputs() {
+        val executed = """
+        {"type": "executed", "data": {"node": "12", "output": {
+            "video": [{"filename": "video/ComfyUI_00001_.mp4", "subfolder": "", "type": "output"}],
+            "audio": [{"filename": "audio/ComfyUI_00002_.flac", "subfolder": "", "type": "output"}]
+        }, "prompt_id": "9b1c"}}
+        """
+
+        val message = WSMessage.fromJson(executed) as WSMessage.ExecutedMessage
+        assertEquals("12", message.node)
+        assertEquals("video/ComfyUI_00001_.mp4", message.output.video.single().filename)
+        assertEquals("audio/ComfyUI_00002_.flac", message.output.audio.single().filename)
+        assertEquals(emptyList<WSMessage.Image>(), message.output.images)
+    }
+
+    @Test
     fun testExecutionSuccessMessageParsing() {
         val executionSuccess = """
         {"type": "execution_success", "data": {"prompt_id": "f79020a5-b9ca-465d-9fb0-59c9ffef379c", "timestamp": 1723167762147}}

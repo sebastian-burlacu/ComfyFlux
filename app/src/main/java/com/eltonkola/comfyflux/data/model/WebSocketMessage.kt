@@ -157,14 +157,17 @@ sealed class WSMessage {
     data class Output(
         // 'executed' fires for EVERY finished node; intermediate nodes
         // (TextGenerate, PreviewAny, ...) report other keys or none at all.
-        val images: List<Image> = emptyList()
+        val images: List<Image> = emptyList(),
+        val video: List<Image> = emptyList(),
+        val audio: List<Image> = emptyList()
     )
 
     @Serializable
     data class Image(
         val filename: String,
         val subfolder: String,
-        val type: String
+        val type: String,
+        val format: String? = null
     )
 
     companion object {
