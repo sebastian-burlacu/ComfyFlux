@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
@@ -36,6 +37,10 @@ class GenerationService : Service(), KoinComponent {
         private const val CHANNEL_ID = "generation_progress"
         private const val NOTIF_ID = 42
         private const val ACTION_START = "start"
+        /** Idle time before the notification is dropped, so queued jobs share it. */
+        private const val IDLE_STOP_MS = 3_000L
+        /** A submit that never reached the server must not keep a notification. */
+        private const val NEVER_STARTED_MS = 60_000L
 
         fun begin(context: Context) {
             ContextCompat.startForegroundService(
@@ -43,11 +48,23 @@ class GenerationService : Service(), KoinComponent {
                 Intent(context, GenerationService::class.java).setAction(ACTION_START)
             )
         }
+
+        /** The app knows the job is over (or never started): drop the notification now. */
+        fun end(context: Context) {
+            context.stopService(Intent(context, GenerationService::class.java))
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var sawRunning = false
-    private var startedAt = System.currentTimeMillis()
+    private var idleSinceMs = 0L
+    private val startedAt = System.currentTimeMillis()
+
+    // Latest progress snapshot; the ticker below reads it instead of relying on
+    // emissions alone - a prompt the server rejects never emits again, and the
+    // ongoing notification used to sit there until the app was force-stopped.
+    @Volatile
+    private var latest: ProgressGenerationUIState? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -56,7 +73,15 @@ class GenerationService : Service(), KoinComponent {
         ensureChannel()
         val flux: FluxAPI = get()
         scope.launch {
-            flux.progressUiState.collect { state -> onState(state) }
+            flux.progressUiState.collect { latest = it }
+        }
+        // Own clock, so the notification can never outlive the run it belongs
+        // to, whatever the websocket did or did not send.
+        scope.launch {
+            while (isActive) {
+                tick()
+                delay(1_000)
+            }
         }
     }
 
@@ -65,27 +90,43 @@ class GenerationService : Service(), KoinComponent {
         return START_NOT_STICKY
     }
 
-    private fun onState(state: ProgressGenerationUIState) {
-        if (state.executing) {
-            sawRunning = true
-            val percent = when {
-                state.maxProgress > 0 -> state.progress * 100 / state.maxProgress
-                else -> (state.totalProgress() * 100).toInt()
+    private fun tick() {
+        val state = latest
+        val now = System.currentTimeMillis()
+        if (state == null) {
+            // No progress state at all (server already gone).
+            if (now - startedAt > NEVER_STARTED_MS) stopSelf()
+            return
+        }
+        // Queued-but-not-running counts as activity: the job is on the server.
+        val busy = state.executing || state.serverRunning || state.queueRemaining > 0
+        when {
+            busy -> {
+                sawRunning = sawRunning || state.executing
+                idleSinceMs = 0
+                val percent = when {
+                    state.maxProgress > 0 -> state.progress * 100 / state.maxProgress
+                    else -> (state.totalProgress() * 100).toInt()
+                }
+                val detail = buildString {
+                    append(
+                        state.statusMessage.ifBlank {
+                            if (state.executing) "Generating" else "Waiting in the queue"
+                        }
+                    )
+                    if (state.queueRemaining > 0) append(" - ${state.queueRemaining} queued")
+                }
+                NotificationManagerCompat.from(this)
+                    .notify(NOTIF_ID, build(detail, percent))
             }
-            val detail = buildString {
-                append(state.statusMessage.ifBlank { "Generating" })
-                if (state.queueRemaining > 0) append(" - ${state.queueRemaining} queued")
+
+            sawRunning -> {
+                // Give queued jobs a moment; a genuinely idle session stops us.
+                if (idleSinceMs == 0L) idleSinceMs = now
+                else if (now - idleSinceMs > IDLE_STOP_MS) stopSelf()
             }
-            NotificationManagerCompat.from(this)
-                .notify(NOTIF_ID, build(detail, percent))
-        } else if (sawRunning) {
-            // Give queued jobs a moment; a genuinely idle session stops us.
-            scope.launch {
-                delay(3_000)
-                if (!get<FluxAPI>().progressUiState.value.executing) stopSelf()
-            }
-        } else if (System.currentTimeMillis() - startedAt > 120_000) {
-            stopSelf()
+
+            now - startedAt > NEVER_STARTED_MS -> stopSelf()
         }
     }
 

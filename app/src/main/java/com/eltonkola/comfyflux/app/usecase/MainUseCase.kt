@@ -65,6 +65,7 @@ import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
 import com.eltonkola.comfyflux.data.network.normalizeServerUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -128,7 +129,14 @@ class MainUseCase(
     private val appState: AppState
 ) {
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Background jobs must not die silently: an unhandled failure here is the
+    // kind of thing that later looks like an unexplained freeze.
+    private val appScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO +
+            CoroutineExceptionHandler { _, e ->
+                logStore.error("client", "unhandled background failure: ${e.stackTraceToString().take(1500)}")
+            }
+    )
 
     companion object {
         // How often the foreground queue watch asks the server what it is
@@ -878,7 +886,12 @@ class MainUseCase(
             if (!joiningRunningSession) stop()
         } catch (e: Exception) {
             reportGenerationFailure(e, "generate (${uiState.value.workflow.name})")
-            if (!joiningRunningSession) stop()
+            if (!joiningRunningSession) {
+                // Nothing reached the server, so the progress notification is
+                // already a lie: take it down instead of letting it linger.
+                com.eltonkola.comfyflux.data.GenerationService.end(applicationContext)
+                stop()
+            }
         }
     }
 
