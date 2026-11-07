@@ -430,6 +430,7 @@ class FluxAPI(private val logStore: LogStore) {
 
     suspend fun generateImage(prompt: PromptRequest) {
         val promptId = queuePrompt(prompt)
+        rememberLocalPrompt(promptId)
 
         var ownsSession: Boolean
         synchronized(settlement) {
@@ -459,7 +460,27 @@ class FluxAPI(private val logStore: LogStore) {
         )
 
         try {
-            runGenerationSession()
+            while (true) {
+                runGenerationSession()
+                // A Create tap that landed while the socket was closing has an
+                // unsettled job and no session to ride: keep streaming here
+                // instead of leaving the job untracked (no progress, no Stop
+                // button, only Clear queue).
+                val lateJobs = synchronized(settlement) {
+                    if (settlement.isEmpty()) {
+                        sessionActive = false
+                        false
+                    } else true
+                }
+                if (!lateJobs) break
+                logStore.info("client", "${settlement.count()} queued job(s) still open; resuming the session")
+                _progressUiState.update {
+                    it.copy(
+                        executing = true,
+                        statusMessage = "Still ${settlement.count()} queued job(s)"
+                    )
+                }
+            }
         } finally {
             synchronized(settlement) { sessionActive = false }
         }
@@ -547,6 +568,42 @@ class FluxAPI(private val logStore: LogStore) {
                 )
             }
             throw e
+        }
+    }
+
+    /**
+     * Prompt ids this app queued (bounded). Lets the queue watcher tell
+     * "a run I started finished" from "someone else's run finished" without
+     * waiting for the settlement bookkeeping to clear.
+     */
+    private val localPrompts = LinkedHashSet<String>()
+
+    fun wasLocallyQueued(promptId: String): Boolean = synchronized(localPrompts) {
+        promptId in localPrompts
+    }
+
+    private fun rememberLocalPrompt(promptId: String) {
+        synchronized(localPrompts) {
+            localPrompts.add(promptId)
+            while (localPrompts.size > 50) {
+                val oldest = localPrompts.firstOrNull() ?: break
+                localPrompts.remove(oldest)
+            }
+        }
+    }
+
+    /**
+     * Feed the server's own queue state into the progress state: Stop shows
+     * while anything runs, and the Clear-queue count stays truthful even when
+     * the app is not streaming a session of its own.
+     */
+    fun noteServerActivity(running: Boolean, pendingCount: Int) {
+        _progressUiState.update {
+            // While our own session streams, the websocket's status events own
+            // the queue count; the poll only adds the server-side view of
+            // whether anything is running at all.
+            if (it.executing) it.copy(serverRunning = running)
+            else it.copy(serverRunning = running, queueRemaining = pendingCount)
         }
     }
 
@@ -655,6 +712,22 @@ class FluxAPI(private val logStore: LogStore) {
         decodeBody<SystemStats>(responseBody, "/system_stats", response.status.value)
     }
 
+    /**
+     * Did one prompt id finish cleanly on the server? null when the server no
+     * longer has that entry (history purged). Used for runs this app watched
+     * but did not start, where there is no websocket error to read.
+     */
+    suspend fun runSucceeded(promptId: String): Boolean? = traced("/history/<id>") {
+        withContext(Dispatchers.IO) {
+            val response = client.get("$serverAddress/history/$promptId")
+            val responseBody = response.bodyAsText()
+            val decoded = runCatching {
+                decodeBody<Map<String, HistoryResponse>>(responseBody, "/history", response.status.value)
+            }.getOrNull() ?: return@withContext null
+            decoded[promptId]?.status?.status_str == "success"
+        }
+    }
+
     suspend fun fetchHistory(): List<HistoryItem> = traced("/history") {
         withContext(Dispatchers.IO) {
             val response = client.get("$serverAddress/history")
@@ -689,6 +762,9 @@ class FluxAPI(private val logStore: LogStore) {
         // Same positional-array guard as history normalisation: one odd
         // entry must not take down the whole queue view.
         val arr = this as? JsonArray ?: return null
+        // Positional LiteGraph array: [queue number, prompt id, prompt, ...].
+        // /queue delete takes the NUMBER; the prompt id is for display only.
+        val number = (arr.getOrNull(0) as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
         val id = (arr.getOrNull(1) as? JsonPrimitive)?.contentOrNull ?: return null
         val promptJson = arr.getOrNull(2)?.toString() ?: return null
         val workflow = runCatching { ComfyJson.decodeFromString<Workflow>(promptJson) }.getOrNull()
@@ -699,7 +775,8 @@ class FluxAPI(private val logStore: LogStore) {
 
         return Queue.Item(
             prompt = prompt,
-            id = id
+            id = id,
+            number = number
         )
     }
 
@@ -722,10 +799,20 @@ class FluxAPI(private val logStore: LogStore) {
     }
 
 
-    suspend fun cancelWorkflow(id: String) = traced("POST /queue delete") {
+    /**
+     * Drop one job from the queue. The server keys jobs by their position
+     * number, so a job whose number the app never read cannot be deleted
+     * (older responses had no number in it).
+     */
+    suspend fun cancelWorkflow(item: Queue.Item) = traced("POST /queue delete") {
+        val number = item.number
+            ?: run {
+                logStore.warn("client", "queue delete skipped: job ${item.id.take(8)} has no queue number")
+                return@traced
+            }
         val deleteBody = buildJsonObject {
             putJsonArray("delete") {
-                add(id)
+                add(number)
             }
         }.toString()
 

@@ -58,6 +58,46 @@ class Notifier(private val context: Application) {
         }
     }
 
+    /**
+     * A run started outside this app instance (web UI, another phone) finished
+     * while the app was watching its queue.
+     */
+    fun foreignRunFinished(foreground: Boolean, success: Boolean, unknown: Boolean) {
+        if (foreground) return
+        ensureChannel()
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = when {
+            !success -> "Server run failed"
+            unknown -> "Server run finished"
+            else -> "Server run finished"
+        }
+        val text = when {
+            !success -> "A generation started outside the app ended with an error"
+            else -> "A generation started outside the app is done - open the app to view it"
+        }
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            manager.notify(nextId++, notification)
+        } catch (e: SecurityException) {
+            // Notification permission revoked; the result is still visible in-app.
+        }
+    }
+
     fun hasPermission(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
         return ContextCompat.checkSelfPermission(

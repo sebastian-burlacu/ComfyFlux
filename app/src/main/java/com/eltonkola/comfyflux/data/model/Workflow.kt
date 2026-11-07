@@ -158,6 +158,49 @@ fun Workflow.promptNodeIds(): List<String> {
     return found
 }
 
+/**
+ * Where a numeric widget actually lives. Templates route step counts, CFG and
+ * strengths through PrimitiveInt / PrimitiveFloat nodes - and sometimes
+ * through a ComfySwitchNode that offers two of them - so the scheduler node's
+ * own input holds a link that [replaceInputs] must never overwrite. The write
+ * goes to the primitive at the other end of the link instead.
+ *
+ * Returns the (nodeId, input) pairs to write. A link that ends somewhere else
+ * (a math node, a model output) has no safe widget and yields nothing.
+ */
+private val PRIMITIVE_VALUE_INPUTS = mapOf(
+    "PrimitiveInt" to "value",
+    "PrimitiveFloat" to "value",
+    "PrimitiveString" to "value",
+    "PrimitiveStringMultiline" to "value"
+)
+
+internal fun Workflow.numericWriteTargets(
+    id: String,
+    input: String,
+    depth: Int = 0
+): List<Pair<String, String>> {
+    val node = this[id] ?: return emptyList()
+    val value = node.inputs.jsonObject[input] ?: return emptyList()
+    if (value !is JsonArray) return listOf(id to input)
+    val sourceId = value.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return emptyList()
+    val source = this[sourceId] ?: return emptyList()
+    if (depth >= 2) return emptyList()
+    PRIMITIVE_VALUE_INPUTS[source.classType]?.let { return listOf(sourceId to it) }
+    if (source.classType == "ComfySwitchNode") {
+        // Both branches are written: the override holds whichever way the
+        // switch is set, which is what a user typing a step count expects.
+        return listOf("on_true", "on_false").flatMap { branch ->
+            numericWriteTargets(sourceId, branch, depth + 1)
+        }
+    }
+    return emptyList()
+}
+
+/** True when a numeric override for this input can be written somewhere. */
+internal fun Workflow.takesNumericInput(id: String, input: String): Boolean =
+    numericWriteTargets(id, input).isNotEmpty()
+
 internal fun Workflow.replaceInputs(id: String, replacements: Map<String, JsonPrimitive>) {
     val node = this[id] ?: return
     val updated = buildJsonObject {
@@ -402,27 +445,91 @@ fun Workflow.updateSeed(seed: Long) {
 }
 
 // class_type -> the sampler inputs the app is allowed to override. KSamplerAdvanced
-// names its step count "steps" as well; CFGGuider only exposes cfg.
+// names its step count "steps" as well; the newer guide graphs split the same
+// knobs across nodes: the guider holds cfg, BasicScheduler holds steps.
 private val CFG_STEPS_INPUTS = mapOf(
     "KSampler" to mapOf("cfg" to "cfg", "steps" to "steps"),
     "KSamplerAdvanced" to mapOf("cfg" to "cfg", "steps" to "steps"),
-    "CFGGuider" to mapOf("cfg" to "cfg")
+    "CFGGuider" to mapOf("cfg" to "cfg"),
+    // Two CFGs: the cond CFG is the one the slider means.
+    "DualCFGGuider" to mapOf("cfg" to "cfg_conds"),
+    // Guide graphs keep the step count on the node that builds the sigma
+    // schedule, and ComfyUI ships a family of them. Writing the same number
+    // the web UI widget would write is what makes the slider work there.
+    "BasicScheduler" to mapOf("steps" to "steps"),
+    "Flux2Scheduler" to mapOf("steps" to "steps"),
+    "SDTurboScheduler" to mapOf("steps" to "steps"),
+    "AlignYourStepsScheduler" to mapOf("steps" to "steps"),
+    "OptimalStepsScheduler" to mapOf("steps" to "steps"),
+    "GITSScheduler" to mapOf("steps" to "steps"),
+    "BetaSamplingScheduler" to mapOf("steps" to "steps"),
+    "KarrasScheduler" to mapOf("steps" to "steps"),
+    "ExponentialScheduler" to mapOf("steps" to "steps"),
+    "PolyexponentialScheduler" to mapOf("steps" to "steps"),
+    "LaplaceScheduler" to mapOf("steps" to "steps"),
+    "VPScheduler" to mapOf("steps" to "steps"),
+    "LTXVScheduler" to mapOf("steps" to "steps"),
+    "Ideogram4Scheduler" to mapOf("steps" to "steps")
 )
+
+// Sigma-list nodes: the step count is baked into a literal sigma string, so
+// no widget exists to write. ExtendIntermediateSigmas takes a schedule and
+// stretches it, which is why it is not in the table above.
+private val SIGMA_LIST_NODES = setOf(
+    "ManualSigmas", "ExtendIntermediateSigmas", "FlipSigmas", "SplitSigmas",
+    "SplitSigmasDenoise", "SetFirstSigma", "NormalizeSigmas"
+)
+
+/**
+ * Where the Steps / CFG sliders can actually land in this graph. Empty lists
+ * are the honest answer for guided models (FLUX.2 has no CFG widget) and for
+ * sigma-list workflows (steps are fixed), and the UI says so instead of
+ * letting a slider do nothing.
+ */
+data class GuidanceTargets(
+    val stepsNodeIds: List<String>,
+    val cfgNodeIds: List<String>,
+    /** Steps are typed in as a sigma list somewhere in the graph. */
+    val fixedSigmaSchedule: Boolean
+) {
+    val takesSteps: Boolean get() = stepsNodeIds.isNotEmpty()
+    val takesCfg: Boolean get() = cfgNodeIds.isNotEmpty()
+
+}
 
 /**
  * Override the sampler settings with the values picked in the More tab.
  * cfg <= 0 / steps <= 0 mean "keep whatever the workflow itself specifies",
- * so each is skipped independently; CFGGuider only ever receives the cfg.
+ * so each is skipped independently; a node only ever receives what it exposes.
  */
+fun Workflow.guidanceTargets(): GuidanceTargets {
+    val steps = mutableListOf<String>()
+    val cfg = mutableListOf<String>()
+    forEach { (id, node) ->
+        val names = CFG_STEPS_INPUTS[node.classType] ?: return@forEach
+        if (names["steps"] != null && takesNumericInput(id, names.getValue("steps"))) steps += id
+        if (names["cfg"] != null && takesNumericInput(id, names.getValue("cfg"))) cfg += id
+    }
+    return GuidanceTargets(
+        stepsNodeIds = steps,
+        cfgNodeIds = cfg,
+        fixedSigmaSchedule = any { it.value.classType in SIGMA_LIST_NODES }
+    )
+}
+
 fun Workflow.updateCfgAndSteps(cfg: Float, steps: Int) {
     if (cfg <= 0f && steps <= 0) return
     entries.toList().forEach { (id, node) ->
         val names = CFG_STEPS_INPUTS[node.classType] ?: return@forEach
-        val replacements = buildMap {
-            if (cfg > 0f) names["cfg"]?.let { put(it, JsonPrimitive(cfg)) }
-            if (steps > 0) names["steps"]?.let { put(it, JsonPrimitive(steps)) }
-        }
-        if (replacements.isNotEmpty()) replaceInputs(id, replacements)
+        if (cfg > 0f) names["cfg"]?.let { input -> writeNumeric(id, input, JsonPrimitive(cfg)) }
+        if (steps > 0) names["steps"]?.let { input -> writeNumeric(id, input, JsonPrimitive(steps)) }
+    }
+}
+
+/** Write one numeric widget, following the primitive links templates use. */
+internal fun Workflow.writeNumeric(id: String, input: String, value: JsonPrimitive) {
+    numericWriteTargets(id, input).forEach { (targetId, targetInput) ->
+        replaceInputs(targetId, mapOf(targetInput to value))
     }
 }
 

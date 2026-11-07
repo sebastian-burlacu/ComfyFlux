@@ -337,6 +337,10 @@ class WorkflowConverter(private val objectInfo: JsonObject) {
         // first legal value - otherwise validation rejects the whole prompt.
         sp.forEach { s ->
             val opts = comboOptions(s) ?: return@forEach
+            // Nothing to snap to: the server has an empty list for this input
+            // (an empty models folder). Leave the template's own value; the
+            // Create screen's "your server is missing" card names it.
+            if (opts.isEmpty()) return@forEach
             val v = inputs[s.name] as? JsonPrimitive ?: return@forEach
             if (v.isString && v.content in opts) return@forEach
             val d = s.opts["default"]

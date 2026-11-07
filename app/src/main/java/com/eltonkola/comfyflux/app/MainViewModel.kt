@@ -240,7 +240,7 @@ class MainViewModel(
 
     fun cancelQueueWorkflow(item: Queue.Item) {
         viewModelScope.launch {
-            fluxAPI.cancelWorkflow(item.id)
+            fluxAPI.cancelWorkflow(item)
             loadQueue(showLoading = false)
         }
     }

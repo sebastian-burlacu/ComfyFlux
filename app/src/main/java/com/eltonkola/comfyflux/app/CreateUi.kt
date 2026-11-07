@@ -64,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.ContentScale
 import com.eltonkola.comfyflux.data.model.ImageInput
+import com.eltonkola.comfyflux.data.model.StrengthSlot
 import com.eltonkola.comfyflux.data.model.WorkflowNeeds
 import androidx.compose.ui.Alignment
 import coil.compose.AsyncImage
@@ -88,6 +89,7 @@ import com.eltonkola.comfyflux.data.model.ProgressGenerationUIState
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.ArrowDown
 import com.eltonkola.comfyflux.ui.theme.ikona.Clean
+import com.eltonkola.comfyflux.ui.theme.ikona.Error
 import com.eltonkola.comfyflux.ui.theme.ikona.Image
 import com.eltonkola.comfyflux.ui.theme.ikona.Magic
 import com.eltonkola.comfyflux.ui.theme.ikona.Paste
@@ -442,6 +444,10 @@ fun PromptTab(
             onApply = { text -> viewModel.updatePrompt(text) }
         )
 
+        // The server-gap report sits above everything else the workflow
+        // needs: a run that cannot work should be obvious before the tap.
+        WorkflowGapsCard(uiState)
+
         // Only workflows with a real negative-input show this; others derive
         // the negative from the positive and keep the workflow's own text.
         // img2img: workflows with an image node take a photo from the
@@ -534,6 +540,8 @@ fun AdvancedTab(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
         SamplerSettingsSelector(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
         ModelSlotsSelector(uiState = uiState, viewModel = viewModel)
+        Spacer(modifier = Modifier.height(8.dp))
+        StrengthGroupsSection(uiState = uiState, viewModel = viewModel)
         Spacer(modifier = Modifier.height(8.dp))
         WorkflowSwitchesSelector(uiState = uiState, viewModel = viewModel)
         // The History/Create bar floats over the tab content; keep the last
@@ -648,31 +656,91 @@ fun ModelSlotsSelector(uiState: ImageGenerationUiState, viewModel: MainViewModel
             // LoRA strength next to the file it belongs to, so "too strong"
             // is fixable without opening the graph.
             slot.strengths.forEach { strength ->
-                val key = slot.strengthKey(strength)
-                val override = uiState.strengthOverrides[key]
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Slider(
-                        value = (override ?: strength.current).coerceIn(
-                            strength.range(override).start, strength.range(override).endInclusive
-                        ),
-                        onValueChange = { viewModel.setStrength(key, it) },
-                        valueRange = strength.range(override),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = "%.2f".format(override ?: strength.current),
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(start = 6.dp)
-                    )
-                }
-                if (override != null) {
-                    TextButton(onClick = { viewModel.setStrength(key, null) }) {
-                        Text(
-                            text = "Use the workflow's ${strength.label} strength",
-                            fontSize = 11.sp
-                        )
-                    }
-                }
+                StrengthSliderRow(
+                    key = slot.strengthKey(strength),
+                    strength = strength,
+                    uiState = uiState,
+                    viewModel = viewModel
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+    }
+}
+
+
+/**
+ * One strength knob: slider + live value + a reset back to the workflow's
+ * own number. Shared by the model-slot LoRA sliders and the apply-node
+ * strength section; the override key space ("nodeId|input") is identical.
+ */
+@Composable
+private fun StrengthSliderRow(
+    key: String,
+    strength: StrengthSlot,
+    uiState: ImageGenerationUiState,
+    viewModel: MainViewModel
+) {
+    val override = uiState.strengthOverrides[key]
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Slider(
+            value = (override ?: strength.current).coerceIn(
+                strength.range(override).start, strength.range(override).endInclusive
+            ),
+            onValueChange = { viewModel.setStrength(key, it) },
+            valueRange = strength.range(override),
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "%.2f".format(override ?: strength.current),
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 6.dp)
+        )
+    }
+    if (override != null) {
+        TextButton(onClick = { viewModel.setStrength(key, null) }) {
+            Text(
+                text = "Use the workflow's ${strength.label} strength",
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+
+/**
+ * Strength knobs for nodes that carry no model file of their own (ControlNet
+ * apply, adapters): the same sliders as the LoRA rows, so "the effect is too
+ * strong" is fixable without opening the graph.
+ */
+@Composable
+fun StrengthGroupsSection(uiState: ImageGenerationUiState, viewModel: MainViewModel) {
+    if (uiState.strengthGroups.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        uiState.strengthGroups.forEach { group ->
+            Text(
+                text = "${group.label} strength (node ${group.nodeId})",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "How hard this node pushes into the run; remembered for this workflow",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            group.strengths.forEach { strength ->
+                StrengthSliderRow(
+                    key = "${group.nodeId}|${strength.input}",
+                    strength = strength,
+                    uiState = uiState,
+                    viewModel = viewModel
+                )
             }
             Spacer(modifier = Modifier.height(4.dp))
         }
@@ -928,6 +996,29 @@ fun SamplerSettingsSelector(uiState: ImageGenerationUiState, viewModel: MainView
             )
         }
 
+        // CFG/Steps only do something where the graph has a widget for them.
+        // Saying so beats a slider that silently changes nothing: FLUX.2 and
+        // the Qwen turbo graphs fix their own guidance, and a ManualSigmas
+        // graph has no step count at all.
+        uiState.guidance?.let { targets ->
+            listOfNotNull(
+                if (targets.takesSteps || targets.fixedSigmaSchedule) null
+                else "This workflow has no step-count widget; Create keeps its own value.",
+                if (targets.takesSteps) null
+                else if (targets.fixedSigmaSchedule)
+                    "Its steps are baked into a sigma list - change that list in ComfyUI." else null,
+                if (targets.takesCfg) null
+                else "No CFG widget in this graph: guided models set their own guidance."
+            ).forEach { note ->
+                Text(
+                    text = note,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+
         // Sampler / scheduler / denoise, straight from the server's own
         // option lists for the samplers this workflow uses.
         uiState.samplerSlots?.takeUnless { it.isEmpty }?.let { slots ->
@@ -1106,6 +1197,115 @@ fun FailureDetailDialog(
             TextButton(onClick = onDismiss) { Text(text = "Close") }
         }
     )
+}
+
+
+/**
+ * What the selected workflow asks for that this server cannot provide:
+ * unknown custom nodes and model files missing from the server's lists.
+ * Shown before Create so an impossible run is obvious here, not only after
+ * it burns a queue slot to fail.
+ */
+@Composable
+fun WorkflowGapsCard(uiState: ImageGenerationUiState) {
+    val gaps = uiState.gaps
+    // Substitution notes (the template asked for a file this server lacks and
+    // the app swapped in another) belong here too: they explain a run before
+    // it happens, not only after it fails.
+    val swapped = uiState.unavailableFiles
+    if (gaps.isEmpty && swapped.isEmpty()) return
+
+    var showAll by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+
+    val fileNotes = swapped + gaps.missingFiles.map { it.note }
+    val nodeTypesLine = gaps.missingNodeTypes
+        .takeIf { it.isNotEmpty() }
+        ?.let { "Node types this server does not know: ${it.joinToString(", ")}" }
+    val allLines = fileNotes + listOfNotNull(nodeTypesLine)
+
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Ikona.Error,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = "This workflow needs " +
+                            "${swapped.size + gaps.missingFiles.size + gaps.missingNodeTypes.size} " +
+                            (if (swapped.size + gaps.missingFiles.size + gaps.missingNodeTypes.size == 1)
+                                "thing" else "things") +
+                            " your server does not have",
+                    fontSize = 14.sp
+                )
+            }
+            // Up to four notes inline; the rest live behind Show all so a
+            // big gap list never pushes ImageNeedsCard off the screen.
+            fileNotes.take(4).forEach { note ->
+                Text(
+                    text = note,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            nodeTypesLine?.let {
+                Text(
+                    text = it,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { showAll = true }) {
+                    Text(text = "Show all (${allLines.size})", fontSize = 13.sp)
+                }
+                TextButton(
+                    onClick = { clipboard.setText(AnnotatedString(allLines.joinToString("\n"))) }
+                ) {
+                    Text(text = "Copy list", fontSize = 13.sp)
+                }
+            }
+        }
+    }
+
+    if (showAll) {
+        AlertDialog(
+            onDismissRequest = { showAll = false },
+            title = { Text("What this workflow needs") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .fillMaxWidth()
+                ) {
+                    allLines.forEach { line ->
+                        Text(text = line, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { clipboard.setText(AnnotatedString(allLines.joinToString("\n"))) }
+                ) { Text(text = "Copy") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAll = false }) { Text(text = "Close") }
+            }
+        )
+    }
 }
 
 

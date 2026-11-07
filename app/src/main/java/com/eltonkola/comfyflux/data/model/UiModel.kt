@@ -34,7 +34,9 @@ data class Queue(
 ) {
     data class Item(
         val id: String,
-        val prompt: String
+        val prompt: String,
+        /** Position in the server queue; what /queue delete actually takes. */
+        val number: Int? = null
     )
 }
 
@@ -50,6 +52,10 @@ data class ProgressGenerationUIState(
     // when the failure is app-side.
     val errorDetail: String = "",
     val executing: Boolean = false,
+    // The SERVER has a job running (it may be another client's, or a job this
+    // app queued before a restart). Stop is offered whenever this is true,
+    // so the button does not vanish while the queue still has work.
+    val serverRunning: Boolean = false,
     val allNodes: List<String> = emptyList(),
     val remainingNodes: List<String> = emptyList(),
     // Live latent preview (android.graphics.Bitmap) decoded from the WS
@@ -101,6 +107,9 @@ data class ImageGenerationUiState(
     // Model choices detected on the selected workflow + files picked for them.
     val modelSlots: List<ModelSlot> = emptyList(),
     val modelOverrides: Map<String, String> = emptyMap(),
+    // Strength knobs of nodes without a file choice (ControlNet/adapter
+    // applies); their overrides share the "nodeId|input" key space.
+    val strengthGroups: List<StrengthGroup> = emptyList(),
     // Strength overrides for the widgets beside model slots, keyed
     // "nodeId|strength_model"; absent = the workflow's own value.
     val strengthOverrides: Map<String, Float> = emptyMap(),
@@ -116,6 +125,11 @@ data class ImageGenerationUiState(
     // permissions don't survive restarts).
     val supportsImageInput: Boolean = false,
     val workflowNeeds: WorkflowNeeds? = null,
+    // Which of CFG/Steps this graph can actually take (null = not analysed yet).
+    val guidance: GuidanceTargets? = null,
+    // What this workflow asks for that the server cannot provide; drives the
+    // "your server is missing" card before the run, not only after it fails.
+    val gaps: WorkflowGaps = WorkflowGaps(),
     val imageInputs: List<ImageInput> = emptyList(),
     val imagePicks: Map<String, ImagePick> = emptyMap(),
     // Template settings this server could not provide (model files mostly);

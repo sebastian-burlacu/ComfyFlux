@@ -32,7 +32,14 @@ import com.eltonkola.comfyflux.data.model.applySamplerChoices
 import com.eltonkola.comfyflux.data.model.fitToAspect
 import com.eltonkola.comfyflux.data.model.SIZE_STEPS
 import com.eltonkola.comfyflux.data.model.applyStrengthOverrides
+import com.eltonkola.comfyflux.data.model.finishedForeignRuns
 import com.eltonkola.comfyflux.data.model.detectModelSlots
+import com.eltonkola.comfyflux.data.model.detectStrengthGroups
+import com.eltonkola.comfyflux.data.model.guidanceTargets
+import com.eltonkola.comfyflux.data.model.gaps
+import com.eltonkola.comfyflux.data.model.prunedTo
+import com.eltonkola.comfyflux.data.model.withRememberedChoices
+import com.eltonkola.comfyflux.data.model.asWorkflowChoices
 import com.eltonkola.comfyflux.data.model.negativeTextTargets
 import com.eltonkola.comfyflux.data.model.updateNegativePrompt
 import com.eltonkola.comfyflux.data.model.detectWorkflowToggles
@@ -51,6 +58,12 @@ import com.eltonkola.comfyflux.data.network.FluxAPI
 import com.eltonkola.comfyflux.data.network.GroqAPI
 import com.eltonkola.comfyflux.data.network.normalizeServerUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -108,6 +121,14 @@ class MainUseCase(
     private val appState: AppState
 ) {
 
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    companion object {
+        // How often the foreground queue watch asks the server what it is
+        // running. /queue is tiny; 3 s is responsive without chattering.
+        private const val QUEUE_WATCH_MS = 3_000L
+    }
+
     private val _uiState = MutableStateFlow(
         ImageGenerationUiState(server = appSettings.serverUrl())
     )
@@ -153,6 +174,7 @@ class MainUseCase(
     /** Pick a model file for one detected slot (ModelSlot.key -> filename). */
     fun setModelChoice(key: String, value: String) {
         _uiState.update { it.copy(modelOverrides = it.modelOverrides + (key to value)) }
+        persistChoices()
     }
 
     fun setImageWidth(width: Int) {
@@ -180,11 +202,13 @@ class MainUseCase(
     fun setCfg(cfg: Float) {
         _uiState.update { it.copy(cfg = cfg) }
         saveDraft()
+        persistChoices()
     }
 
     fun setSteps(steps: Int) {
         _uiState.update { it.copy(steps = steps) }
         saveDraft()
+        persistChoices()
     }
 
     /**
@@ -197,20 +221,24 @@ class MainUseCase(
             if (value == null) map.remove(key) else map[key] = value
             state.copy(strengthOverrides = map)
         }
+        persistChoices()
     }
 
     /** null = leave the sampler name the workflow saved. */
     fun setSamplerChoice(name: String?) {
         _uiState.update { it.copy(samplerChoice = name) }
+        persistChoices()
     }
 
     fun setSchedulerChoice(name: String?) {
         _uiState.update { it.copy(schedulerChoice = name) }
+        persistChoices()
     }
 
     /** null = keep the workflow's denoise; 1.0 is a full (normal) run. */
     fun setDenoise(value: Float?) {
         _uiState.update { it.copy(denoise = value?.coerceIn(0.05f, 1f)) }
+        persistChoices()
     }
 
     /**
@@ -228,6 +256,7 @@ class MainUseCase(
             }
         }
         saveDraft()
+        persistChoices()
     }
 
     /** A1111-style reroll: keep everything, bump the seed by one, go deterministic. */
@@ -371,6 +400,7 @@ class MainUseCase(
                 logStore.info("server", "connected to $url (${stats.system.os}, python ${stats.system.python_version})")
                 refreshServerWorkflows()
                 refreshModelSlots()
+                startQueueWatch()
             }
             .onFailure { e ->
                 val friendly = friendlyConnectionError(e)
@@ -504,21 +534,25 @@ class MainUseCase(
                 loadRawWorkflow()
             }
             val slots = detectModelSlots(workflow, info)
+            val groups = detectStrengthGroups(workflow, info, slots.map { it.nodeId }.toSet())
             val samplers = detectSamplerSlots(workflow, info)
             val sizeSlot = detectResolutionSelector(workflow, info)
             val toggles = raw?.let { detectWorkflowToggles(it) } ?: emptyList()
             slotsKey = key
+            // What this workflow remembers from earlier runs (per server);
+            // null for a workflow never configured from here.
+            val remembered = appSettings.workflowChoices()[key]
             _uiState.update { state2 ->
-                state2.copy(
-                    modelSlots = slots,
+                val controls = if (remembered == null) {
                     // Drop overrides from a previous workflow or files the
                     // server no longer lists.
-                    modelOverrides = state2.modelOverrides.filter { (k, v) ->
-                        slots.any { it.key == k && it.options.contains(v) }
-                    },
-                    strengthOverrides = state2.strengthOverrides.filter { (k, _) ->
-                        slots.any { slot -> slot.strengths.any { slot.strengthKey(it) == k } }
-                    },
+                    state2.prunedTo(slots, groups, samplers, sizeSlot)
+                } else {
+                    state2.withRememberedChoices(remembered, slots, groups, samplers, sizeSlot)
+                }
+                controls.copy(
+                    modelSlots = slots,
+                    strengthGroups = groups,
                     workflowToggles = toggles,
                     toggleOverrides = state2.toggleOverrides.filterKeys { k ->
                         toggles.any { it.key == k }
@@ -526,16 +560,12 @@ class MainUseCase(
                     // Sampler/size controls of the new workflow; a choice only
                     // survives while the new workflow still offers it.
                     samplerSlots = samplers.takeUnless { it.isEmpty },
-                    samplerChoice = state2.samplerChoice?.takeIf { samplers.samplerOptions.contains(it) },
-                    schedulerChoice = state2.schedulerChoice?.takeIf { samplers.schedulerOptions.contains(it) },
-                    denoise = if (samplers.hasDenoise) state2.denoise else null,
                     sizeSlot = sizeSlot,
-                    aspectChoice = sizeSlot?.let { sz ->
-                        state2.aspectChoice?.takeIf { sz.aspectOptions.contains(it) }
-                    },
                     supportsNegativePrompt = workflow.negativeTextTargets().isNotEmpty(),
                     supportsImageInput = workflow.hasImageInput(),
                     workflowNeeds = workflow.needs(),
+                    guidance = workflow.guidanceTargets(),
+                    gaps = workflow.gaps(info),
                     imageInputs = workflow.imageInputs(),
                     // Picked photos only make sense for the slots the
                     // current workflow actually has.
@@ -547,6 +577,61 @@ class MainUseCase(
         }.onFailure { e ->
             logStore.debug("client", "model slot detection skipped: ${e.message}")
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Server queue watch
+    //
+    // The websocket session only streams prompts THIS app queued, so a run
+    // started in the web UI or on another phone used to leave the app with no
+    // Stop button, a stale queue count and no notification. A foreground poll
+    // of /queue (a tiny response) keeps those three honest.
+    // ---------------------------------------------------------------------
+
+    private var queueWatchJob: Job? = null
+
+    private fun startQueueWatch() {
+        if (queueWatchJob?.isActive == true) return
+        queueWatchJob = appScope.launch {
+            var runningIds = emptySet<String>()
+            while (isActive) {
+                delay(QUEUE_WATCH_MS)
+                // Foreground-only: no background polling, no wake-locks.
+                if (!appState.foreground) continue
+                if (_uiState.value.stats == null) {
+                    // Disconnected: nothing is known to be running, so the
+                    // Stop button must not keep showing a stale server state.
+                    fluxAPI.noteServerActivity(false, 0)
+                    runningIds = emptySet()
+                    continue
+                }
+                val queue = runCatching { fluxAPI.fetchQueue() }.getOrNull() ?: continue
+                val running = queue.running.map { it.id }.toSet()
+                fluxAPI.noteServerActivity(running.isNotEmpty(), queue.pending.size)
+
+                // running -> idle: a prompt the server was working on and that
+                // this app never queued finished without anyone telling the user.
+                finishedForeignRuns(runningIds, running) { fluxAPI.wasLocallyQueued(it) }
+                    .firstOrNull()
+                    ?.let { notifyForeignRun(it) }
+                runningIds = running
+            }
+        }
+    }
+
+    /** Notify about a run this app watched but did not start. */
+    private suspend fun notifyForeignRun(promptId: String) {
+        if (fluxAPI.progressUiState.value.executing) return
+        val success = runCatching { fluxAPI.runSucceeded(promptId) }.getOrNull()
+        logStore.info(
+            "client",
+            "run $promptId (started elsewhere) finished: ${when (success) { true -> "success"; false -> "failed"; else -> "unknown" }}"
+        )
+        notifier.foreignRunFinished(
+            foreground = appState.foreground,
+            success = success ?: true,
+            unknown = success == null
+        )
     }
 
     private fun friendlyConnectionError(e: Throwable): String = when (e) {
@@ -827,6 +912,19 @@ class MainUseCase(
                 recentPrompts = appSettings.recentPrompts()
             )
         }
+    }
+
+    /**
+     * Remember the Create choices for the selected workflow (keyed per
+     * server), so switching workflows or restarting the app no longer drops
+     * model picks, strengths, sampler/scheduler/denoise, aspect, CFG/steps.
+     */
+    private fun persistChoices() {
+        val state = uiState.value
+        appSettings.setWorkflowChoices(
+            "${'$'}{state.server}|${'$'}{state.workflow.name}",
+            state.asWorkflowChoices()
+        )
     }
 
     private fun saveDraft() {

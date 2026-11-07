@@ -180,14 +180,22 @@ fun QueueRowUi(item: Queue.Item, isRunning: Boolean, onCancel: (Queue.Item) -> U
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            Text(text = item.id, fontSize = 10.sp)
+            // #<position> is the /queue delete handle; servers may omit it.
+            val idLine = if (item.number != null) "#${item.number} ${item.id}" else item.id
+            Text(text = idLine, fontSize = 10.sp)
             Spacer(modifier = Modifier.size(4.dp))
             Text(text = item.prompt, fontSize = 16.sp)
         }
         HelpIconButton(
             onClick = { onCancel(item) },
             imageVector = if (isRunning) Ikona.Stop else Ikona.Cancel,
-            help = if (isRunning) "Interrupt this running generation" else "Remove this queued job"
+            // Without a queue position the delete call has nothing to address.
+            enabled = isRunning || item.number != null,
+            help = when {
+                isRunning -> "Interrupt this running generation"
+                item.number == null -> "This server did not report a queue position for the job"
+                else -> "Remove this job from the queue"
+            }
         )
     }
 }

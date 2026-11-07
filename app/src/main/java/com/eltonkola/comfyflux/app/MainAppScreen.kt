@@ -167,7 +167,10 @@ fun MainAppScreen(
                     Spacer(modifier = Modifier.size(8.dp))
 
                     Column(horizontalAlignment = Alignment.End) {
-                        if (progressUiState.executing) {
+                        // The server is the authority on whether something is
+                        // running: jobs queued elsewhere (or a session this app
+                        // lost) still get a Stop, not just Clear queue.
+                        if (progressUiState.executing || progressUiState.serverRunning) {
                             ExtendedFloatingActionButton(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 onClick = {

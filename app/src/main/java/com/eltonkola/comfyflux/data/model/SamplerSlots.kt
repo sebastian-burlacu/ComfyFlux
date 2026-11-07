@@ -26,11 +26,20 @@ data class SamplerSlots(
         get() = samplerOptions.isEmpty() && schedulerOptions.isEmpty() && !hasDenoise
 }
 
-// class_type -> the combo/float inputs the app may override on it.
+// class_type -> the combo/float inputs the app may override on it. The guide
+// graphs (RandomNoise -> CFGGuider/BasicGuider -> BasicScheduler) spread the
+// same three knobs over two nodes: the sampler name sits on KSamplerSelect,
+// the scheduler and denoise on BasicScheduler.
 private val SAMPLER_INPUTS = mapOf(
     "KSampler" to setOf("sampler_name", "scheduler", "denoise"),
     "KSamplerAdvanced" to setOf("sampler_name", "scheduler", "denoise"),
-    "KSamplerSelect" to setOf("sampler_name")
+    "KSamplerSelect" to setOf("sampler_name"),
+    "BasicScheduler" to setOf("scheduler", "denoise"),
+    // These schedulers also carry the img2img strength in guide graphs.
+    "SDTurboScheduler" to setOf("denoise"),
+    "AlignYourStepsScheduler" to setOf("denoise"),
+    "OptimalStepsScheduler" to setOf("denoise"),
+    "GITSScheduler" to setOf("denoise")
 )
 
 /**
@@ -117,11 +126,10 @@ fun Workflow.applySamplerChoices(sampler: String?, scheduler: String?, denoise: 
     if (sampler == null && scheduler == null && denoise == null) return
     entries.toList().forEach { (id, node) ->
         val allowed = SAMPLER_INPUTS[node.classType] ?: return@forEach
-        val replacements = buildMap {
-            sampler?.let { if ("sampler_name" in allowed) put("sampler_name", JsonPrimitive(it)) }
-            scheduler?.let { if ("scheduler" in allowed) put("scheduler", JsonPrimitive(it)) }
-            denoise?.let { if ("denoise" in allowed) put("denoise", JsonPrimitive(it)) }
-        }
-        if (replacements.isNotEmpty()) replaceInputs(id, replacements)
+        // Some graphs feed these widgets from primitive nodes; writeNumeric
+        // follows those links instead of breaking them.
+        sampler?.let { if ("sampler_name" in allowed) writeNumeric(id, "sampler_name", JsonPrimitive(it)) }
+        scheduler?.let { if ("scheduler" in allowed) writeNumeric(id, "scheduler", JsonPrimitive(it)) }
+        denoise?.let { if ("denoise" in allowed) writeNumeric(id, "denoise", JsonPrimitive(it)) }
     }
 }

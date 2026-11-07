@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,12 +29,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.eltonkola.comfyflux.components.ExpandableSection
+import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.model.ImageGenerationUiState
 import com.eltonkola.comfyflux.data.model.WorkflowFile
+import com.eltonkola.comfyflux.data.model.withoutBundled
 import com.eltonkola.comfyflux.data.model.workflows
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.ArrowRight
 import com.eltonkola.comfyflux.ui.theme.ikona.WorkflowIc
+import org.koin.compose.koinInject
 
 @Composable
 fun WorkflowsUi(
@@ -45,6 +49,10 @@ fun WorkflowsUi(
     var samplesOpen by remember { mutableStateOf(true) }
     var serverOpen by remember { mutableStateOf(true) }
     var localOpen by remember { mutableStateOf(true) }
+    // Same Koin singleton the settings screen writes, so the list reacts live.
+    val appSettings: AppSettings = koinInject()
+    val settings by appSettings.settingsState.collectAsState()
+    val bundled = workflows.withoutBundled(settings.hideBundledWorkflows)
 
     Column(
         modifier = Modifier
@@ -80,18 +88,22 @@ fun WorkflowsUi(
         }
         Spacer(modifier = Modifier.size(8.dp))
 
-        ExpandableSection(
-            expanded = samplesOpen,
-            title = "Built-in Workflows",
-            onExpand = { samplesOpen = !samplesOpen }
-        ) {
+        // The whole section disappears with the setting; an empty header
+        // would only invite confusion.
+        if (bundled.isNotEmpty()) {
+            ExpandableSection(
+                expanded = samplesOpen,
+                title = "Built-in Workflows",
+                onExpand = { samplesOpen = !samplesOpen }
+            ) {
 
-            workflows.forEach {
-                WorkflowRow(it, uiState.workflow == it, onSelect)
+                bundled.forEach {
+                    WorkflowRow(it, uiState.workflow == it, onSelect)
+                    Spacer(modifier = Modifier.size(4.dp))
+                }
                 Spacer(modifier = Modifier.size(4.dp))
-            }
-            Spacer(modifier = Modifier.size(4.dp))
 
+            }
         }
 
         ExpandableSection(

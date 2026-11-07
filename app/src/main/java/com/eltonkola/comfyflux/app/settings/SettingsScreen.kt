@@ -44,6 +44,7 @@ import androidx.navigation.NavController
 import com.eltonkola.comfyflux.R
 import com.eltonkola.comfyflux.app.AppScreens
 import com.eltonkola.comfyflux.app.MainViewModel
+import com.eltonkola.comfyflux.data.AppSettings
 import com.eltonkola.comfyflux.data.LogStore
 import com.eltonkola.comfyflux.ui.theme.Ikona
 import com.eltonkola.comfyflux.ui.theme.ikona.Back
@@ -98,7 +99,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "System theme: ${if (uiState.system) "On" else "Off"}",
+                    text = "System theme",
                     fontSize = 20.sp,
                     modifier = Modifier.weight(1f)
                 )
@@ -111,7 +112,7 @@ fun SettingsScreen(
                 // Always visible; only meaningful when the app picks its
                 // own theme instead of following Android.
                 Text(
-                    text = "Dark Mode: ${if (uiState.dark) "On" else "Off"}",
+                    text = "Dark Mode",
                     fontSize = 20.sp,
                     color = if (uiState.system)
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -132,7 +133,7 @@ fun SettingsScreen(
             //dynamic colors are on android 12+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 Text(
-                    text = "Dynamic color: ${if (uiState.dynamicColor) "On" else "Off"}",
+                    text = "Dynamic color",
                     fontSize = 20.sp
                 )
                 Switch(
@@ -146,35 +147,72 @@ fun SettingsScreen(
 
 
 
+            // Wired straight to AppSettings (a Koin singleton) rather than
+            // MainViewModel; its flow already backs uiState below.
+            val appSettings: AppSettings = koinInject()
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Hide built-in workflows",
+                    fontSize = 20.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = uiState.hideBundledWorkflows,
+                    onCheckedChange = {
+                        appSettings.setHideBundledWorkflows(it)
+                    }
+                )
+            }
             Text(
-                text = "Verbose logging: ${if (uiState.verboseLogging) "On" else "Off"}",
-                fontSize = 20.sp
+                text = "Removes the sample workflows that ship with the app from the workflow list. Workflows saved on your server or on this device are unaffected.",
+                fontSize = 12.sp
             )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Verbose logging",
+                    fontSize = 20.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = uiState.verboseLogging,
+                    onCheckedChange = {
+                        viewModel.updateVerboseLogging(it)
+                    }
+                )
+            }
             Text(
                 text = "Keeps HTTP request traces, websocket events and error stack traces in Settings -> Logs. Turn on when reporting a problem.",
                 fontSize = 12.sp
             )
-            Switch(
-                checked = uiState.verboseLogging,
-                onCheckedChange = {
-                    viewModel.updateVerboseLogging(it)
-                }
-            )
             Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                text = "Log request bodies: ${if (uiState.logBodies) "On" else "Off"}",
-                fontSize = 20.sp
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Log request bodies",
+                    fontSize = 20.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = uiState.logBodies,
+                    onCheckedChange = {
+                        viewModel.updateLogBodies(it)
+                    }
+                )
+            }
             Text(
                 text = "Also keeps the full JSON every generation request sends (workflow, prompt, seed, models). Very verbose; only for deep debugging.",
                 fontSize = 12.sp
-            )
-            Switch(
-                checked = uiState.logBodies,
-                onCheckedChange = {
-                    viewModel.updateLogBodies(it)
-                }
             )
             Spacer(modifier = Modifier.height(16.dp))
 

@@ -53,12 +53,31 @@ data class StrengthSlot(
     }
 }
 
-// Strength widgets the app exposes beside a model file choice.
-private val STRENGTH_INPUTS = mapOf("strength_model" to "model", "strength_clip" to "CLIP")
+// Strength widgets the app exposes beside a model file choice. "strength" is
+// the bare knob apply nodes use (ControlNet applies, adapters); the stacked
+// forms belong to multi-lora loaders, where lora_0 pairs with strength_0.
+private val STRENGTH_INPUTS = mapOf(
+    "strength_model" to "model",
+    "strength_clip" to "CLIP",
+    "strength" to "strength"
+)
+
+// Strength of a stacked loader slot: lora_<i> -> strength_<i>.
+private fun stackedStrengthFor(fileInput: String): String? =
+    STACKED_LORA_INPUTS[fileInput]?.let { "strength_$it" }
+
+private val STACKED_LORA_INPUTS = mapOf(
+    "lora_0" to 0, "lora_1" to 1, "lora_2" to 2, "lora_3" to 3
+)
+
+// Every strength input name applyStrengthOverrides may write: keeps a stale
+// draft from rewriting an unrelated float.
+private val WRITABLE_STRENGTH_INPUTS: Set<String> =
+    STRENGTH_INPUTS.keys + (0..3).map { "strength_$it" }
 
 // Input names that hold model files. Anything not in this set is a graph
 // choice we deliberately do not touch (samplers, schedulers, node toggles).
-private val MODEL_INPUTS = setOf(
+internal val MODEL_INPUTS = setOf(
     "ckpt_name",
     "unet_name",
     "lora_name",
@@ -117,7 +136,7 @@ fun detectModelSlots(workflow: Workflow, objectInfo: JsonObject): List<ModelSlot
                 val options = descriptor.comboOptions() ?: return@mapNotNull null
                 val value = current[name]?.jsonPrimitiveOrNull?.takeIf { it.isString }
                     ?.content ?: ""
-                ModelSlot(id, node.classType, name, value, options, nodeStrengths(inputs, current))
+                ModelSlot(id, node.classType, name, value, options, nodeStrengths(inputs, current, name))
             }
         }.takeIf { it.isNotEmpty() }
     }.flatten().sortedWith(
@@ -129,10 +148,18 @@ fun detectModelSlots(workflow: Workflow, objectInfo: JsonObject): List<ModelSlot
 /**
  * The strength widgets of a node: only when the node itself has the input as
  * a live number (a linked value belongs to its source node) and the server
- * declares a range for it.
+ * declares a range for it. [fileInput] is the model input the widgets sit
+ * beside, so a stacked loader (lora_2) offers its own strength (strength_2).
  */
-private fun nodeStrengths(groups: List<JsonObject>, current: JsonObject): List<StrengthSlot> =
-    STRENGTH_INPUTS.mapNotNull { (name, label) ->
+private fun nodeStrengths(
+    groups: List<JsonObject>,
+    current: JsonObject,
+    fileInput: String = ""
+): List<StrengthSlot> {
+    val extra: Map<String, String> = stackedStrengthFor(fileInput)?.let { mapOf(it to "strength") }
+        ?: emptyMap()
+    val wanted: Map<String, String> = STRENGTH_INPUTS + extra
+    return wanted.mapNotNull { (name, label) ->
         if (current[name] !is JsonPrimitive) return@mapNotNull null
         val spec = groups.firstOrNull { it.containsKey(name) }?.get(name)
         val meta = ((spec as? JsonArray)?.getOrNull(1)) as? JsonObject ?: return@mapNotNull null
@@ -145,6 +172,50 @@ private fun nodeStrengths(groups: List<JsonObject>, current: JsonObject): List<S
             max = meta["max"]?.jsonPrimitiveOrNull?.contentOrNull?.toFloatOrNull() ?: 100f
         )
     }
+}
+
+/**
+ * Strength knobs of nodes that carry no model file choice of their own -
+ * ControlNet/adapter apply nodes, whose `strength` decides how hard the
+ * conditioning pushes. [coveredNodeIds] are the nodes already shown as model
+ * slots, so their strengths are never offered twice.
+ */
+data class StrengthGroup(
+    val nodeId: String,
+    val classType: String,
+    val label: String,
+    val strengths: List<StrengthSlot>
+)
+
+private val APPLY_LABELS = mapOf(
+    "ControlNetApply" to "ControlNet",
+    "ControlNetApplyAdvanced" to "ControlNet",
+    "ControlNetApplySD3" to "ControlNet",
+    "MiniMaxH3FunControlNetApply" to "ControlNet",
+    "AnimaLLLiteApply" to "LLLite",
+    "ConditioningSetAreaStrength" to "Conditioning area",
+    "DifferentialDiffusion" to "Differential diffusion"
+)
+
+fun detectStrengthGroups(
+    workflow: Workflow,
+    objectInfo: JsonObject,
+    coveredNodeIds: Set<String> = emptySet()
+): List<StrengthGroup> =
+    workflow.entries.mapNotNull { (id, node) ->
+        if (id in coveredNodeIds) return@mapNotNull null
+        val spec = objectInfo[node.classType]?.jsonObjectOrNull ?: return@mapNotNull null
+        val inputs = listOfNotNull(
+            spec["input"]?.jsonObjectOrNull?.get("required")?.jsonObjectOrNull,
+            spec["input"]?.jsonObjectOrNull?.get("optional")?.jsonObjectOrNull,
+        )
+        // A node with its own file choices is already a model slot.
+        if (inputs.any { group -> group.keys.any { it in MODEL_INPUTS } }) return@mapNotNull null
+        val strengths = nodeStrengths(inputs, node.inputs.jsonObject)
+        strengths.takeIf { it.isNotEmpty() }?.let {
+            StrengthGroup(id, node.classType, APPLY_LABELS[node.classType] ?: node.classType, it)
+        }
+    }.sortedBy { it.nodeId.toIntOrNull() ?: 0 }
 
 private val SLOT_ORDER = listOf(
     "CheckpointLoaderSimple", "CheckpointLoader",
@@ -190,14 +261,15 @@ fun Workflow.applyStrengthOverrides(overrides: Map<String, Float>) {
         val parts = key.split('|', limit = 2)
         if (parts.size != 2) return@forEach
         val (id, input) = parts
-        if (input !in STRENGTH_INPUTS) return@forEach
-        val node = this[id] ?: return@forEach
-        if (node.inputs.jsonObject[input] !is JsonPrimitive) return@forEach
-        replaceInputs(id, mapOf(input to JsonPrimitive(value)))
+        if (input !in WRITABLE_STRENGTH_INPUTS) return@forEach
+        if (this[id] == null) return@forEach
+        // Follows PrimitiveFloat links templates use for strengths; a link
+        // that ends in a real node output is left completely alone.
+        writeNumeric(id, input, JsonPrimitive(value))
     }
 }
 
-private val JsonElement.jsonObjectOrNull: JsonObject?
+internal val JsonElement.jsonObjectOrNull: JsonObject?
     get() = this as? JsonObject
 
 private val JsonElement.jsonPrimitiveOrNull: JsonPrimitive?

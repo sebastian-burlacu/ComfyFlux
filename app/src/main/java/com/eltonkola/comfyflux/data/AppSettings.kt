@@ -2,6 +2,7 @@ package com.eltonkola.comfyflux.data
 
 import android.content.SharedPreferences
 import com.eltonkola.comfyflux.data.network.DEFAULT_URL
+import com.eltonkola.comfyflux.data.model.WorkflowChoices
 import com.eltonkola.comfyflux.data.network.normalizeServerUrl
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,7 +37,8 @@ data class SettingsState(
     val verboseLogging: Boolean,
     val logBodies: Boolean,
     val enhanceEndpoint: String,
-    val enhanceModel: String
+    val enhanceModel: String,
+    val hideBundledWorkflows: Boolean
 )
 
 class AppSettings(private val sharedPreferences: SharedPreferences) {
@@ -45,7 +47,8 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         MutableStateFlow(
             SettingsState(
                 isDarkTheme(), isSystemTheme(), isDynamicColor(), groqApi(),
-                verboseLogging(), logBodies(), enhanceEndpoint(), enhanceModel()
+                verboseLogging(), logBodies(), enhanceEndpoint(), enhanceModel(),
+                hideBundledWorkflows()
             )
         )
     val settingsState: StateFlow<SettingsState> = _settingsState.asStateFlow()
@@ -62,6 +65,12 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
         const val LOG_BODIES = "log_bodies"
         const val ENHANCE_ENDPOINT = "enhance_endpoint"
         const val ENHANCE_MODEL = "enhance_model"
+        const val HIDE_BUNDLED_WORKFLOWS = "hide_bundled_workflows"
+        const val WORKFLOW_CHOICES = "workflow_choices"
+
+        // Remembered settings are kept per server+workflow; a phone that has
+        // picked a hundred templates gets the oldest ones dropped.
+        const val MAX_WORKFLOW_CHOICES = 60
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -82,6 +91,27 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
 
     fun setGenerationDraft(draft: GenerationDraft) {
         sharedPreferences.edit().putString(GENERATION_DRAFT, json.encodeToString(draft)).apply()
+    }
+
+    /** Remembered Create choices per "server|workflow name". */
+    fun workflowChoices(): Map<String, WorkflowChoices> {
+        val raw = sharedPreferences.getString(WORKFLOW_CHOICES, null) ?: return emptyMap()
+        return runCatching { json.decodeFromString<Map<String, WorkflowChoices>>(raw) }
+            .getOrDefault(emptyMap())
+    }
+
+    fun setWorkflowChoices(key: String, choices: WorkflowChoices) {
+        // Bounded: the store is keyed per server+workflow and a phone that
+        // tries many templates would otherwise grow it forever. Oldest entry
+        // (insertion order) goes first.
+        val all = LinkedHashMap(workflowChoices())
+        all.remove(key)
+        all[key] = choices
+        while (all.size > MAX_WORKFLOW_CHOICES) {
+            val oldest = all.keys.firstOrNull() ?: break
+            all.remove(oldest)
+        }
+        sharedPreferences.edit().putString(WORKFLOW_CHOICES, json.encodeToString(all)).apply()
     }
 
     fun serverUrl(): String {
@@ -108,6 +138,16 @@ class AppSettings(private val sharedPreferences: SharedPreferences) {
     fun setLogBodies(value: Boolean) {
         sharedPreferences.edit().putBoolean(LOG_BODIES, value).apply()
         _settingsState.update { it.copy(logBodies = value) }
+    }
+
+    private fun hideBundledWorkflows(): Boolean {
+        return sharedPreferences.getBoolean(HIDE_BUNDLED_WORKFLOWS, false)
+    }
+
+    /** On: the workflow list drops the samples that ship with the app. */
+    fun setHideBundledWorkflows(value: Boolean) {
+        sharedPreferences.edit().putBoolean(HIDE_BUNDLED_WORKFLOWS, value).apply()
+        _settingsState.update { it.copy(hideBundledWorkflows = value) }
     }
 
     private fun enhanceEndpoint(): String {
