@@ -40,6 +40,10 @@ Two sources, picked from the drawer on the Create screen:
   web UI with *Save* (Ctrl+S); refresh the app's connection (pull the status
   tab / reopen the drawer) to pick up new files.
 
+Settings has **Hide built-in workflows**, which drops the samples that ship
+with the app from that list; your own server and device workflows then sit at
+the top instead of under a pile of samples.
+
 ## Generating
 
 1. Pick a workflow, write a prompt.
@@ -54,13 +58,30 @@ Two sources, picked from the drawer on the Create screen:
    again.
 3. **Advanced** tab: seed (random or fixed, `Seed +1` to nudge), CFG scale, and
    step count. CFG/steps set to `0` keep whatever the workflow itself defines;
-   any non-zero value overrides every sampler in the graph. Below them the
-   **Sampler** and **Scheduler** dropdowns and a **denoise** slider appear for
-   workflows that have a `KSampler` / `KSamplerAdvanced` / `KSamplerSelect`
-   node — the option lists come from `object_info`, so samplers installed by
-   custom nodes show up too. Leaving denoise at *keep* means the slider does
-   nothing and the workflow's own value runs; moving it overrides every
-   sampler node in the graph (inpaint-style workflows usually want ~1.0).
+   any non-zero value overrides every sampler in the graph. This covers the
+   newer *guide-graph* workflows too (Qwen Image 2.1, FLUX.2, MiniMax H3, the
+   Comfy-Org `RandomNoise` + `CFGGuider`/`BasicGuider` + `BasicScheduler`
+   templates), where the knobs are split across nodes: CFG goes to the guider
+   (`CFGGuider`, or `cfg_conds` on a `DualCFGGuider`), the step count goes to
+   the node that builds the sigma schedule (`BasicScheduler`,
+   `Flux2Scheduler`, `SDTurboScheduler`, …). Templates that park those numbers
+   behind `PrimitiveInt`/`PrimitiveFloat` nodes — often behind a
+   `ComfySwitchNode` that offers two of them, which is exactly how the FLUX.2
+   template sets its steps — are written at the primitive instead of breaking
+   the link, so the slider actually takes effect there.
+   Below them the **Sampler** and **Scheduler** dropdowns and a **denoise**
+   slider appear for workflows that have a `KSampler` / `KSamplerAdvanced` /
+   `KSamplerSelect` node (sampler name) or a `BasicScheduler`-style scheduler
+   node (scheduler, denoise) — the option lists come from `object_info`, so
+   samplers installed by custom nodes show up too. Leaving denoise at *keep*
+   means the slider does nothing and the workflow's own value runs; moving it
+   overrides every sampler node in the graph (inpaint-style workflows usually
+   want ~1.0).
+   Where a graph genuinely has nothing to write, the app says so under the
+   fields instead of letting a slider do nothing: FLUX.2 and the Qwen turbo
+   graphs fix their own guidance (no CFG widget), and a graph that samples a
+   literal `ManualSigmas` list has no step count to change — edit that list in
+   ComfyUI.
 4. **Image inputs** (Prompt tab): the card under the prompt shows what the
    workflow consumes - how many `LoadImage` nodes it has, whether the size
    sliders apply, and where the prompt text goes. Each image slot gets its
@@ -81,25 +102,52 @@ Two sources, picked from the drawer on the Create screen:
    right under its dropdown (model strength, and CLIP strength when the node
    has one), so "this LoRA at 0.4" is one thumb-move instead of a graph edit;
    leaving it alone keeps the workflow's value and *Use the workflow's ...
-   strength* puts it back.
-6. **Prompt presets** (Prompt tab, under the prompt box): save the prompt you
+   strength* puts it back. Stacked-LoRA graphs (`lora_0` … `lora_3` feeding one
+   apply chain) get a strength slider per loader too, not just per file.
+6. **Other strengths** (Advanced tab, under Models): nodes that *apply*
+   something rather than load it also carry a strength the app can drive —
+   `ControlNetApply`/`ControlNetApplyAdvanced`, differential diffusion,
+   conditioning-area strength and friends. Each gets its own **… strength**
+   slider grouped under the node that holds it, with the same
+   *use the workflow's value* reset. Strengths the graph computes itself (the
+   input is fed by another node that isn't a plain number box) are left alone
+   rather than snapped to a literal.
+7. **Prompt presets** (Prompt tab, under the prompt box): save the prompt you
    just wrote with a name and comma-separated tags, star the keepers, and tap
    **Apply** to drop any of them into the prompt box. Search covers name,
    text and tags; the tag chips filter. Presets live on the phone, so they
    work with any workflow and survive server restarts.
-7. Hit **Create**. Progress, current node and queue position show live;
+8. Hit **Create**. Progress, current node and queue position show live;
    while sampling runs the preview grid shows the **live latent preview**
    streamed from the server (ComfyUI 0.43+). An ongoing notification tracks
    the run, so the generation keeps going (and stays visible) when you leave
    the app. Finished images land in the preview grid, the History tab and the
    ComfyUI output folder.
+   Finishing (or failing) also raises a notification when the app is in the
+   background. That covers runs you started **elsewhere** too: while the app is
+   open it watches the server queue, so a generation you kicked off in the web
+   UI or on another phone still announces itself when it lands.
+
+**Before** you queue, the Create screen says what this server cannot provide: a
+card above the workflow-needs card names the model files the template asks for
+that the server does not have — including the ones the app swapped for a
+different file to keep the workflow importable — plus any node types the server
+does not know. *Show all* and *Copy list* hand you the exact names to download.
+Substituted runs often still work; the card is there so a bad result is
+explainable instead of mysterious.
 
 Create can be tapped again while a generation runs: the app queues another
 job behind it (the server works the queue first-come, first-served) and all
 images accumulate in one grid. While something is running, **Stop** appears
 above Create — that interrupts only the current job, queued ones keep going.
-When jobs are pending, **Clear queue** appears above History and drops every
-queued job without touching the running one.
+The Stop button follows the *server*, not just this app's own session: if the
+web UI (or another phone) started the run, you still get Stop, not just Clear
+queue, as long as the app is open and watching. When jobs are pending, **Clear
+queue** appears above History and drops every queued job without touching the
+running one. To drop a *single* queued job, open the drawer's **Queue** tab and
+use the remove button on that row; the row shows the server's queue position
+(`#12`), which is the handle the delete call needs — servers that don't report
+it leave the button disabled and say so.
 
 Marking runs on the History tab: **☆ keep** / **✕ discard** on a row are marks
 on the *phone* (ComfyUI has no such thing, and nothing is sent to the server).
@@ -159,3 +207,12 @@ Whatever you last had on the Create screen — prompt, negative prompt, size,
 batch, seed, CFG, steps, workflow — is restored after an app restart. That
 includes workflows you picked from the server: the app re-selects one right
 after connecting.
+
+### Settings that follow the workflow
+
+Model picks, strength sliders, sampler/scheduler/denoise, the aspect chip and
+CFG/steps are remembered **per workflow** (keyed by server + workflow name, the
+60 most recent kept), not per app session. Switch from a Qwen graph to a FLUX
+graph and each gets its own values back — including after a restart. A choice
+the current workflow or server can no longer offer is dropped instead of sent,
+so a LoRA you picked on one graph can't leak into another.

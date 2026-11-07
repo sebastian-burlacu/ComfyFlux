@@ -38,24 +38,32 @@ builds).
   diagnostics when it cannot
 - Runs workflows from the phone: size, batch, prompt, seed, CFG scale and
   step count are patched into the workflow before queueing (0 keeps the
-  workflow's own value)
+  workflow's own value) — including the newer guide-graph workflows, where
+  those knobs live on guider/scheduler nodes or behind primitive nodes
+- Model pickers and strength sliders for the loaders and apply nodes a
+  workflow uses (LoRAs, stacked LoRAs, ControlNet apply strength, ...)
 - Saved server workflows from the ComfyUI web UI, fetched and run directly
-- Queue screen with per-job cancel and a one-tap "Clear queue" that
-  drops all pending jobs while leaving the running one alone
+- Queue screen with a remove button per pending job (addressed by its queue
+  position) and a one-tap "Clear queue" that drops all pending jobs while
+  leaving the running one alone; Stop follows the server, so a run started in
+  the web UI still gets stopped from the phone
 - History view with the generated images, saved locally in the app;
   any past generation can be re-run with its exact original settings
 - Prompt database with local search to reuse prompts quickly
 - Recent prompt chips under the prompt box: prompts from successful
   generations are kept (newest first) and one tap puts the full prompt back
 - Your last create-screen draft survives app restarts: prompt, size, batch,
-  seed and the selected bundled workflow are restored on launch
+  seed and the selected workflow are restored on launch, and model picks,
+  strengths, sampler/scheduler/denoise, aspect and CFG/steps are remembered
+  per workflow rather than per session
 - In-app logs (Settings -> Logs): server-reported failures like failed
   executions and rejected prompts, plus client-side connection, timeout
   and conversion errors; filterable to errors, clearable, and exportable
   to a text file for sharing; a "Verbose logging" switch additionally
   keeps HTTP request traces, websocket events and error stack traces
 - Notifications when a generation finishes or fails while the app is in
-  the background; failed generations get a "Retry with same settings"
+  the background — including runs started elsewhere (web UI, another phone),
+  which the app notices while it is open; failed generations get a "Retry with same settings"
   button on the Create screen; "Seed +1" reroll for iterating on a
   result without reshuffling everything else
 - No account required. The app talks to your own server; the only optional
